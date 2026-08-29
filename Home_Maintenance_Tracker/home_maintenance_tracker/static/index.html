@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Home Maintenance Tracker</title>
+  <link rel="stylesheet" href="static/styles.css">
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <aside class="sidebar" aria-label="Primary navigation">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">⌂</span>
+        <span><strong>Home Maintenance</strong><small>Material History</small></span>
+      </div>
+      <nav id="nav">
+        <button data-page="dashboard" class="active"><span>◫</span> Dashboard</button>
+        <button data-page="assets"><span>◇</span> Assets</button>
+        <button data-page="maintenance"><span>✓</span> Maintenance</button>
+        <button data-page="meters"><span>⌁</span> Meter readings</button>
+        <button data-page="reports"><span>▤</span> Reports</button>
+        <button data-page="help"><span>?</span> Help</button>
+      </nav>
+      <div class="sidebar-footer">
+        <button data-page="settings"><span>⚙</span> Settings</button>
+        <div class="version" id="version">Version</div>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="pageEyebrow">OVERVIEW</p>
+          <h1 id="pageTitle">Dashboard</h1>
+        </div>
+        <div class="top-actions">
+          <button class="icon-button" id="themeToggle" aria-label="Toggle theme">◐</button>
+          <button class="button primary" id="quickAdd">＋ Add item</button>
+        </div>
+      </header>
+
+      <div id="loading" class="loading"><span></span><p>Loading your maintenance history…</p></div>
+      <div id="errorState" class="empty-state hidden"><span>!</span><h2>Unable to load the application</h2><p id="errorMessage"></p><button class="button" onclick="location.reload()">Try again</button></div>
+
+      <section id="page-dashboard" class="page active"></section>
+      <section id="page-assets" class="page"></section>
+      <section id="page-maintenance" class="page"></section>
+      <section id="page-meters" class="page"></section>
+      <section id="page-reports" class="page"></section>
+      <section id="page-help" class="page"></section>
+      <section id="page-settings" class="page"></section>
+    </main>
+
+    <nav class="mobile-nav" aria-label="Mobile navigation">
+      <button data-page="dashboard" class="active"><span>◫</span><small>Home</small></button>
+      <button data-page="assets"><span>◇</span><small>Assets</small></button>
+      <button data-page="maintenance"><span>✓</span><small>Tasks</small></button>
+      <button data-page="meters"><span>⌁</span><small>Meters</small></button>
+      <button data-page="settings"><span>⚙</span><small>More</small></button>
+    </nav>
+  </div>
+
+  <dialog id="modal" class="modal">
+    <form method="dialog" class="modal-card" id="modalForm">
+      <header><div><p class="eyebrow" id="modalEyebrow">DETAILS</p><h2 id="modalTitle">Modal</h2></div><button value="cancel" class="close-button" aria-label="Close">×</button></header>
+      <div class="modal-body" id="modalBody"></div>
+      <footer id="modalFooter"><button value="cancel" class="button">Cancel</button><button type="button" class="button primary" id="modalSubmit">Save</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="setupDialog" class="modal setup-modal">
+    <form method="dialog" class="modal-card" id="setupForm">
+      <header><div><p class="eyebrow">FIRST-RUN SETUP</p><h2>Welcome to Home Maintenance Tracker</h2></div></header>
+      <div class="modal-body" id="setupBody"></div>
+      <footer><button type="button" class="button primary" id="setupNext">Continue</button></footer>
+    </form>
+  </dialog>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite"></div>
+  <script src="static/app.js"></script>
+</body>
+</html>
