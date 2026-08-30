@@ -21,6 +21,16 @@ The app discovers `notify.mobile_app_*` services registered by Home Assistant Co
 
 The app checks once daily at the configured hour. It sends only overdue reminders, using the recurrence-based cadence documented in Help. Red escalation cannot be hidden by snoozing.
 
+## Meter management
+
+Create meters from an item record or directly from **Meter Readings → New Meter**. Meter units come from standardized type-specific lists. Use the row-level **Update** action for one meter or **Update Readings** for several meters at once.
+
+Every active meter can produce a printable QR label. Scanning it opens that meter's individual reading form. Meters with no readings or linked tasks can be permanently deleted; meters with history are archived. An active maintenance task must be changed or canceled before its meter can be archived.
+
+## Contextual Help
+
+Select the circled question mark beside any screen or tool title to open the relevant instructions without leaving the current workflow. The **Help** screen provides the complete searchable reference.
+
 ## Nabu Casa and QR labels
 
 Ingress uses your existing Home Assistant authentication. If you open Home Assistant through Nabu Casa, the app works inside that same connection. QR labels use the stable Home Assistant app-panel route rather than a temporary Ingress session address. Generate labels while using the Home Assistant address that the phone should later open. The scanning phone must be signed into Home Assistant.

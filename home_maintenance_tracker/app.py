@@ -42,11 +42,19 @@ from database import (
 from scheduling import enrich_task, parse_date, reminder_days
 
 
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.2.0"
 STATIC_DIR = Path(__file__).parent / "static"
 VALID_ATTACHMENT_CATEGORIES = {"manual", "receipt", "warranty", "diagram", "photograph", "video", "service_record", "other"}
 VALID_REMARK_CATEGORIES = {"preventive", "corrective", "observation", "lifecycle"}
 VALID_SCHEDULE_TYPES = {"one_time", "calendar", "meter", "combined", "seasonal", "pattern", "condition"}
+METER_UNITS = {
+    "mileage": ["miles", "kilometers", "nautical miles"],
+    "runtime": ["hours", "minutes"],
+    "cycles": ["cycles", "starts", "uses", "loads", "operations"],
+    "volume": ["US gallons", "Imperial gallons", "liters", "cubic feet", "cubic meters"],
+    "energy": ["kWh", "MWh", "therms", "BTU", "megajoules"],
+    "mass": ["pounds", "kilograms"],
+}
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("HMT_MAX_UPLOAD_MB", "250")) * 1024 * 1024
@@ -60,6 +68,16 @@ def require_fields(data: dict, *fields: str) -> None:
     missing = [field for field in fields if data.get(field) in (None, "")]
     if missing:
         abort(400, description=f"Missing required field(s): {', '.join(missing)}")
+
+
+def validate_meter_definition(kind: str, unit: str) -> tuple[str, str]:
+    kind = (kind or "").strip()
+    unit = (unit or "").strip()
+    if kind not in METER_UNITS:
+        abort(400, description="Choose a standard meter type.")
+    if unit not in METER_UNITS[kind]:
+        abort(400, description="Choose a standard unit for the selected meter type.")
+    return kind, unit
 
 
 def db_row(db, sql: str, values=(), *, required=True):
@@ -167,6 +185,7 @@ def bootstrap():
         warranties.sort(key=lambda item: item["expiration"])
         return jsonify({
             "version": APP_VERSION,
+            "meter_units": METER_UNITS,
             "settings": settings,
             "standard_fields": STANDARD_FIELDS,
             "assets": assets,
@@ -227,6 +246,7 @@ def get_asset(asset_id):
         for row in db.execute("SELECT * FROM meters WHERE asset_id=? ORDER BY name", (asset_id,)):
             meter = row_to_dict(row)
             meter["readings"] = [row_to_dict(reading) for reading in db.execute("SELECT * FROM meter_readings WHERE meter_id=? ORDER BY recorded_at DESC LIMIT 20", (row["id"],))]
+            meter["active_task_count"] = db.execute("SELECT COUNT(*) n FROM maintenance_tasks WHERE meter_id=? AND active=1", (row["id"],)).fetchone()["n"]
             asset["meters"].append(meter)
         asset["tasks"] = [task_dict(db, row) for row in db.execute("SELECT * FROM maintenance_tasks WHERE asset_id=? ORDER BY active DESC,title", (asset_id,))]
         if asset.get("replaced_by_id"):
@@ -493,12 +513,20 @@ def delete_attachment(attachment_id):
 @app.get("/api/meters")
 def list_meters():
     with connect() as db:
-        rows = db.execute("SELECT m.*,a.name AS asset_name FROM meters m JOIN assets a ON a.id=m.asset_id WHERE a.archived=0 ORDER BY a.name,m.name").fetchall()
+        include_archived = request.args.get("include_archived") == "1"
+        rows = db.execute(
+            "SELECT m.*,a.name AS asset_name FROM meters m JOIN assets a ON a.id=m.asset_id "
+            "WHERE a.archived=0 AND (?=1 OR m.archived=0) ORDER BY m.archived,a.name,m.name",
+            (1 if include_archived else 0,),
+        ).fetchall()
         result = []
         for row in rows:
             meter = row_to_dict(row)
             latest = db.execute("SELECT * FROM meter_readings WHERE meter_id=? ORDER BY recorded_at DESC LIMIT 1", (row["id"],)).fetchone()
             meter["latest"] = row_to_dict(latest)
+            meter["reading_count"] = db.execute("SELECT COUNT(*) n FROM meter_readings WHERE meter_id=?", (row["id"],)).fetchone()["n"]
+            meter["task_count"] = db.execute("SELECT COUNT(*) n FROM maintenance_tasks WHERE meter_id=?", (row["id"],)).fetchone()["n"]
+            meter["active_task_count"] = db.execute("SELECT COUNT(*) n FROM maintenance_tasks WHERE meter_id=? AND active=1", (row["id"],)).fetchone()["n"]
             result.append(meter)
         return jsonify(result)
 
@@ -507,11 +535,79 @@ def list_meters():
 def create_meter():
     data = payload()
     require_fields(data, "asset_id", "name", "kind", "unit")
+    kind, unit = validate_meter_definition(data["kind"], data["unit"])
     meter_id = new_id("meter")
     with transaction() as db:
         db_row(db, "SELECT id FROM assets WHERE id=?", (data["asset_id"],))
-        db.execute("INSERT INTO meters VALUES (?,?,?,?,?,0,?)", (meter_id, data["asset_id"], data["name"].strip(), data["kind"], data["unit"].strip(), utcnow()))
+        db.execute(
+            "INSERT INTO meters(id,asset_id,name,kind,unit,archived,archived_at,is_sample,created_at) VALUES (?,?,?,?,?,0,NULL,0,?)",
+            (meter_id, data["asset_id"], data["name"].strip(), kind, unit, utcnow()),
+        )
+        if data.get("initial_reading") not in (None, ""):
+            reading = float(data["initial_reading"])
+            if reading < 0:
+                abort(400, description="A running-total reading cannot be negative.")
+            recorded_at = data.get("initial_recorded_at") or utcnow()
+            db.execute(
+                "INSERT INTO meter_readings VALUES (?,?,?,?,?,0,?)",
+                (new_id("reading"), meter_id, reading, recorded_at, "Initial reading", utcnow()),
+            )
         return jsonify(row_to_dict(db_row(db, "SELECT * FROM meters WHERE id=?", (meter_id,)))), 201
+
+
+@app.put("/api/meters/<meter_id>")
+def update_meter(meter_id):
+    data = payload()
+    require_fields(data, "name", "kind", "unit")
+    kind, unit = validate_meter_definition(data["kind"], data["unit"])
+    with transaction() as db:
+        db_row(db, "SELECT id FROM meters WHERE id=?", (meter_id,))
+        db.execute("UPDATE meters SET name=?,kind=?,unit=? WHERE id=?", (data["name"].strip(), kind, unit, meter_id))
+        return jsonify(row_to_dict(db_row(db, "SELECT * FROM meters WHERE id=?", (meter_id,))))
+
+
+@app.post("/api/meters/<meter_id>/archive")
+def archive_meter(meter_id):
+    with transaction() as db:
+        meter = db_row(db, "SELECT * FROM meters WHERE id=?", (meter_id,))
+        active_tasks = db.execute("SELECT COUNT(*) n FROM maintenance_tasks WHERE meter_id=? AND active=1", (meter_id,)).fetchone()["n"]
+        if active_tasks:
+            abort(409, description="This meter is used by active maintenance tasks. Reassign, change, or cancel those tasks first.")
+        db.execute("UPDATE meters SET archived=1,archived_at=? WHERE id=?", (utcnow(), meter_id))
+        return jsonify({"ok": True, "meter_id": meter["id"]})
+
+
+@app.post("/api/meters/<meter_id>/restore")
+def restore_meter(meter_id):
+    with transaction() as db:
+        db_row(db, "SELECT id FROM meters WHERE id=?", (meter_id,))
+        db.execute("UPDATE meters SET archived=0,archived_at=NULL WHERE id=?", (meter_id,))
+        return jsonify({"ok": True})
+
+
+@app.delete("/api/meters/<meter_id>")
+def delete_meter(meter_id):
+    with transaction() as db:
+        db_row(db, "SELECT id FROM meters WHERE id=?", (meter_id,))
+        readings = db.execute("SELECT COUNT(*) n FROM meter_readings WHERE meter_id=?", (meter_id,)).fetchone()["n"]
+        tasks = db.execute("SELECT COUNT(*) n FROM maintenance_tasks WHERE meter_id=?", (meter_id,)).fetchone()["n"]
+        if readings or tasks:
+            abort(409, description="Meters with readings or linked maintenance tasks must be archived instead of deleted.")
+        db.execute("DELETE FROM meters WHERE id=?", (meter_id,))
+        return jsonify({"ok": True})
+
+
+@app.get("/api/meters/<meter_id>/qr")
+def meter_qr(meter_id):
+    target_url = request.args.get("url")
+    if not target_url:
+        abort(400, description="A target URL is required.")
+    with connect() as db:
+        db_row(db, "SELECT id FROM meters WHERE id=?", (meter_id,))
+    image = qrcode.make(target_url, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=3)
+    output = io.BytesIO()
+    image.save(output)
+    return Response(output.getvalue(), mimetype="image/svg+xml")
 
 
 @app.post("/api/meters/readings")
@@ -524,7 +620,9 @@ def add_meter_readings():
     with transaction() as db:
         for item in readings:
             require_fields(item, "meter_id", "reading", "recorded_at")
-            db_row(db, "SELECT id FROM meters WHERE id=?", (item["meter_id"],))
+            meter = db_row(db, "SELECT id,archived FROM meters WHERE id=?", (item["meter_id"],))
+            if meter["archived"]:
+                abort(400, description="Archived meters cannot receive new readings.")
             reading = float(item["reading"])
             validate_running_total(db, item["meter_id"], reading, item["recorded_at"])
             reading_id = new_id("reading")
@@ -594,7 +692,9 @@ def create_task():
         if values["asset_id"]:
             db_row(db, "SELECT id FROM assets WHERE id=?", (values["asset_id"],))
         if values["meter_id"]:
-            meter = db_row(db, "SELECT asset_id FROM meters WHERE id=?", (values["meter_id"],))
+            meter = db_row(db, "SELECT asset_id,archived FROM meters WHERE id=?", (values["meter_id"],))
+            if meter["archived"]:
+                abort(400, description="Archived meters cannot be assigned to active maintenance tasks.")
             if values["asset_id"] and meter["asset_id"] != values["asset_id"]:
                 abort(400, description="The selected meter belongs to a different item.")
         columns = list(values)
@@ -610,6 +710,14 @@ def update_task(task_id):
     values = task_values(payload())
     with transaction() as db:
         db_row(db, "SELECT id FROM maintenance_tasks WHERE id=?", (task_id,))
+        if values["asset_id"]:
+            db_row(db, "SELECT id FROM assets WHERE id=?", (values["asset_id"],))
+        if values["meter_id"]:
+            meter = db_row(db, "SELECT asset_id,archived FROM meters WHERE id=?", (values["meter_id"],))
+            if meter["archived"]:
+                abort(400, description="Archived meters cannot be assigned to active maintenance tasks.")
+            if values["asset_id"] and meter["asset_id"] != values["asset_id"]:
+                abort(400, description="The selected meter belongs to a different item.")
         assignments = ",".join(f"{key}=?" for key in values)
         db.execute(f"UPDATE maintenance_tasks SET {assignments},updated_at=? WHERE id=?", [*[values[key] for key in values], utcnow(), task_id])
         return jsonify(task_dict(db, db_row(db, "SELECT * FROM maintenance_tasks WHERE id=?", (task_id,))))

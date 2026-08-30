@@ -10,6 +10,8 @@ const state = {
   expanded: new Set(),
   setupStep: 0,
   notifyServices: [],
+  meters: [],
+  showArchivedMeters: false,
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -64,11 +66,14 @@ function navigate(page) {
   $$('[data-page]').forEach(el => el.classList.toggle('active', el.dataset.page === page));
   const names = {
     dashboard: ['OVERVIEW', 'Dashboard'], assets: ['MATERIAL HISTORY', 'Assets'], maintenance: ['SCHEDULING', 'Maintenance'],
-    meters: ['USAGE TRACKING', 'Meter readings'], reports: ['ANALYSIS', 'Reports'], help: ['REFERENCE', 'Help'], settings: ['APPLICATION', 'Settings']
+    meters: ['USAGE TRACKING', 'Meter Readings'], reports: ['ANALYSIS', 'Reports'], help: ['REFERENCE', 'Help'], settings: ['APPLICATION', 'Settings']
   };
   $('#pageEyebrow').textContent = names[page][0];
   $('#pageTitle').textContent = names[page][1];
-  $('#quickAdd').textContent = page === 'maintenance' ? '＋ Add task' : page === 'meters' ? '＋ Add readings' : '＋ Add item';
+  $('#pageHelp').dataset.help=HELP_SCREEN_MAP[page];
+  $('#pageHelp').setAttribute('aria-label',`Help for ${names[page][1]}`);
+  $('#pageHelp').title=`Help for ${names[page][1]}`;
+  $('#quickAdd').textContent = page === 'maintenance' ? '＋ Add Task' : page === 'meters' ? '＋ Update Readings' : '＋ Add Item';
   if (page === 'assets') renderAssets();
   if (page === 'maintenance') renderMaintenance();
   if (page === 'meters') renderMeters();
@@ -113,15 +118,15 @@ function renderDashboard() {
       <div class="stat-card"><small>ACTIVE ITEMS</small><strong>${d.active_assets}</strong><span class="subtle">Across the full hierarchy</span></div>
     </div>
     <div class="dashboard-grid">
-      <div class="card"><div class="card-header"><h2>Maintenance requiring attention</h2><button class="button small ghost" data-go="maintenance">View all →</button></div><div class="card-body flush">${renderTaskRows(d.due_tasks, 10)}</div></div>
+      <div class="card"><div class="card-header"><div class="section-title"><h2>Maintenance Requiring Attention</h2>${helpButton('dashboard-attention')}</div><button class="button small ghost" data-go="maintenance">View All →</button></div><div class="card-body flush">${renderTaskRows(d.due_tasks, 10)}</div></div>
       <div class="stack">
-        <div class="card"><div class="card-header"><h3>Quick actions</h3></div><div class="card-body toolbar-group">
+        <div class="card"><div class="card-header"><div class="section-title"><h3>Quick Actions</h3>${helpButton('dashboard-quick')}</div></div><div class="card-body toolbar-group">
           <button class="button" data-action="new-asset">＋ Item</button><button class="button" data-action="new-task">＋ Task</button><button class="button" data-action="readings">⌁ Readings</button>
         </div></div>
-        <div class="card"><div class="card-header"><h3>Recently completed</h3></div><div class="card-body flush">
+        <div class="card"><div class="card-header"><div class="section-title"><h3>Recently Completed</h3>${helpButton('dashboard-recent')}</div></div><div class="card-body flush">
           ${d.recent.length ? d.recent.slice(0,6).map(item => `<div class="task-row"><span class="state-dot"></span><div><div class="task-title">${item.outcome === 'higher_authority' ? '⇧ ' : ''}${esc(item.title)}</div><div class="subtle">${esc(item.asset_name || 'General')} · ${fmtDate(item.completion_date)}</div></div><div>${item.outcome === 'skipped' ? '<span class="badge amber">SKIPPED</span>' : '<span class="badge green">DONE</span>'}</div></div>`).join('') : '<div class="empty-state"><p>No completed maintenance yet.</p></div>'}
         </div></div>
-        <div class="card"><div class="card-header"><h3>Warranty dates</h3><button class="button small ghost" data-report="warranties">Report →</button></div><div class="card-body flush">
+        <div class="card"><div class="card-header"><div class="section-title"><h3>Warranty Dates</h3>${helpButton('dashboard-warranty')}</div><button class="button small ghost" data-report="warranties">Report →</button></div><div class="card-body flush">
           ${d.warranties.length ? d.warranties.slice(0,5).map(item => `<div class="task-row" data-asset-id="${item.asset_id}"><span class="state-dot"></span><div><div class="task-title">${esc(item.name)}</div><div class="subtle">Expires ${fmtDate(item.expiration)}</div></div></div>`).join('') : '<div class="empty-state"><p>No warranty dates entered.</p></div>'}
         </div></div>
       </div>
@@ -198,14 +203,14 @@ async function loadAssetDetail(assetId) {
       </div>
       <div class="detail-body">
         ${fields.length ? `<dl class="detail-grid">${fields.map(field => `<div class="field"><dt>${esc(field.label)}</dt><dd>${esc(asset.attributes[field.key])}</dd></div>`).join('')}</dl>` : '<p class="subtle">No optional fields have been selected for this item.</p>'}
-        <div class="section-heading"><h3>Maintenance</h3><button class="button small" data-new-task-asset="${asset.id}">＋ Task</button></div>
+        <div class="section-heading"><div class="section-title"><h3>Maintenance</h3>${helpButton('maintenance-task')}</div><button class="button small" data-new-task-asset="${asset.id}">＋ Task</button></div>
         ${renderTaskRows(asset.tasks)}
-        <div class="section-heading"><h3>Material history</h3><button class="button small" data-new-remark="${asset.id}">＋ Remark</button></div>
+        <div class="section-heading"><div class="section-title"><h3>Material History</h3>${helpButton('remarks')}</div><button class="button small" data-new-remark="${asset.id}">＋ Remark</button></div>
         ${asset.remarks.length ? `<div class="timeline">${asset.remarks.map(r => `<div class="timeline-item"><div><span class="badge ${r.category==='corrective'?'red':r.category==='preventive'?'green':'blue'}">${esc(r.category.toUpperCase())}</span> <span class="subtle">Work: ${fmtDate(r.work_date)} · Entered ${new Date(r.entry_timestamp).toLocaleString()}</span></div><p>${esc(r.text)}</p>${r.attachments?.length?`<div class="toolbar-group">${r.attachments.map(a=>`<a class="badge blue" href="api/attachments/${a.id}" target="_blank">${esc(a.original_name)}</a>`).join('')}</div>`:''}<div class="toolbar-group no-print"><button class="button small ghost" data-edit-remark="${r.id}" data-asset="${asset.id}">Edit</button><button class="button small ghost" data-upload-owner="remark" data-owner-id="${r.id}">Attach file</button><button class="button small ghost" data-delete-remark="${r.id}" data-asset="${asset.id}">Delete</button></div></div>`).join('')}</div>` : '<p class="subtle">No history entries yet.</p>'}
-        <div class="section-heading"><h3>Documents & attachments</h3><button class="button small" data-upload-owner="asset" data-owner-id="${asset.id}">＋ Upload</button></div>
+        <div class="section-heading"><div class="section-title"><h3>Documents & Attachments</h3>${helpButton('attachments')}</div><button class="button small" data-upload-owner="asset" data-owner-id="${asset.id}">＋ Upload</button></div>
         ${asset.attachments.length ? `<div class="attachments">${asset.attachments.map(a => `<div class="attachment"><span class="badge">${esc(a.category.replace('_',' '))}</span><a href="api/attachments/${a.id}" target="_blank">${esc(a.original_name)}</a><span class="subtle">${fmtSize(a.size_bytes)}</span><button class="button small ghost" data-delete-attachment="${a.id}">Delete</button></div>`).join('')}</div>` : '<p class="subtle">No attachments yet.</p>'}
-        <div class="section-heading"><h3>Meters</h3><button class="button small" data-new-meter="${asset.id}">＋ Meter</button></div>
-        ${asset.meters.length ? `<div class="dense-table-wrap"><table><thead><tr><th>Meter</th><th>Current</th><th>Recorded</th></tr></thead><tbody>${asset.meters.map(m => `<tr><td>${esc(m.name)}</td><td>${m.readings[0] ? `${Number(m.readings[0].reading).toLocaleString()} ${esc(m.unit)}` : 'No reading'}</td><td>${m.readings[0] ? new Date(m.readings[0].recorded_at).toLocaleString() : '—'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="subtle">No meters configured.</p>'}
+        <div class="section-heading"><div class="section-title"><h3>Meters</h3>${helpButton('meters-manage')}</div><button class="button small" data-new-meter="${asset.id}">＋ Meter</button></div>
+        ${asset.meters.length ? `<div class="dense-table-wrap"><table><thead><tr><th>Meter</th><th>Current</th><th>Recorded</th><th>Actions</th></tr></thead><tbody>${asset.meters.map(m => `<tr class="${m.archived?'archived':''}"><td><strong>${esc(m.name)}</strong> ${m.archived?'<span class="badge">ARCHIVED</span>':''}</td><td>${m.readings[0] ? `${Number(m.readings[0].reading).toLocaleString()} ${esc(m.unit)}` : 'No Reading'}</td><td>${m.readings[0] ? new Date(m.readings[0].recorded_at).toLocaleString() : '—'}</td><td><div class="toolbar-group">${m.archived?`<button class="button small" data-restore-meter="${m.id}">Restore</button>`:`<button class="button small" data-update-meter="${m.id}">Update</button><button class="button small" data-meter-qr="${m.id}">QR</button><button class="button small" data-edit-meter="${m.id}">Edit</button><button class="button small ghost" data-manage-meter="${m.id}">Manage</button>`}</div></td></tr>`).join('')}</tbody></table></div>` : '<p class="subtle">No Meters Configured.</p>'}
       </div>`;
   } catch (error) { toast(error.message, 'error'); }
 }
@@ -214,7 +219,7 @@ function renderMaintenance() {
   const order = {red:0, overdue:1, upcoming:2, snoozed:3, normal:4};
   const tasks = [...state.data.tasks].sort((a,b) => order[a.state] - order[b.state] || a.title.localeCompare(b.title));
   $('#page-maintenance').innerHTML = `
-    <div class="toolbar"><div class="segmented"><button data-maint-view="agenda" class="${state.maintenanceView==='agenda'?'active':''}">Agenda</button><button data-maint-view="calendar" class="${state.maintenanceView==='calendar'?'active':''}">Month</button><button data-maint-view="table" class="${state.maintenanceView==='table'?'active':''}">Dense table</button></div><button class="button primary" data-action="new-task">＋ Add task</button></div>
+    <div class="toolbar"><div class="toolbar-group"><div class="segmented"><button data-maint-view="agenda" class="${state.maintenanceView==='agenda'?'active':''}">Agenda</button><button data-maint-view="calendar" class="${state.maintenanceView==='calendar'?'active':''}">Month</button><button data-maint-view="table" class="${state.maintenanceView==='table'?'active':''}">Dense Table</button></div>${helpButton('maintenance-views')}</div><button class="button primary" data-action="new-task">＋ Add Task</button></div>
     ${state.maintenanceView === 'agenda' ? `<div class="card"><div class="card-body flush">${renderTaskRows(tasks)}</div></div>` : state.maintenanceView === 'calendar' ? renderCalendar(tasks) : renderTaskTable(tasks)}`;
 }
 
@@ -246,10 +251,11 @@ function scheduleSummary(task) {
 }
 
 function renderMeters() {
-  $('#page-meters').innerHTML = `<div class="toolbar"><p class="subtle">Enter only the meters you checked. Running totals cannot move backward.</p><button class="button primary" data-action="readings">＋ Update readings</button></div><div id="meterTable" class="loading"><span></span></div>`;
-  api('api/meters').then(meters => {
+  $('#page-meters').innerHTML = `<div class="toolbar"><div><p class="subtle">Enter only the meters you checked. Running totals cannot move backward.</p><label class="check-row"><input type="checkbox" id="showArchivedMeters" ${state.showArchivedMeters?'checked':''}> Show Archived Meters</label></div><div class="toolbar-group"><button class="button" data-new-meter-page>＋ New Meter</button><button class="button primary" data-action="readings">＋ Update Readings</button>${helpButton('meters-update')}</div></div><div id="meterTable" class="loading"><span></span></div>`;
+  api(`api/meters${state.showArchivedMeters?'?include_archived=1':''}`).then(meters => {
+    state.meters=meters;
     $('#meterTable').className='dense-table-wrap';
-    $('#meterTable').innerHTML=`<table><thead><tr><th>Item</th><th>Meter</th><th>Type</th><th>Current reading</th><th>Recorded</th></tr></thead><tbody>${meters.map(m=>`<tr><td>${esc(m.asset_name)}</td><td><strong>${esc(m.name)}</strong></td><td>${esc(m.kind)}</td><td>${m.latest?`${Number(m.latest.reading).toLocaleString()} ${esc(m.unit)}`:'—'}</td><td>${m.latest?new Date(m.latest.recorded_at).toLocaleString():'—'}</td></tr>`).join('')}</tbody></table>`;
+    $('#meterTable').innerHTML=meters.length?`<table><thead><tr><th>Item</th><th>Meter</th><th>Type</th><th>Current Reading</th><th>Recorded</th><th>Actions</th></tr></thead><tbody>${meters.map(m=>`<tr class="${m.archived?'archived':''}"><td>${esc(m.asset_name)}</td><td><strong>${esc(m.name)}</strong> ${m.archived?'<span class="badge">ARCHIVED</span>':''}</td><td>${esc(m.kind)} · ${esc(m.unit)}</td><td>${m.latest?`${Number(m.latest.reading).toLocaleString()} ${esc(m.unit)}`:'—'}</td><td>${m.latest?new Date(m.latest.recorded_at).toLocaleString():'—'}</td><td><div class="toolbar-group">${m.archived?`<button class="button small" data-restore-meter="${m.id}">Restore</button>`:`<button class="button small primary" data-update-meter="${m.id}">Update</button><button class="button small" data-meter-qr="${m.id}">QR</button><button class="button small" data-edit-meter="${m.id}">Edit</button><button class="button small ghost" data-manage-meter="${m.id}">Manage</button>`}</div></td></tr>`).join('')}</tbody></table>`:'<div class="empty-state"><span>⌁</span><h2>No Meters Configured</h2><p>Create a meter here or from an item record.</p><button class="button primary" data-new-meter-page>＋ New Meter</button></div>';
   }).catch(e=>toast(e.message,'error'));
 }
 
@@ -306,27 +312,59 @@ function renderHelp() {
   </div>`;
 }
 
+function renderHelpMaster(filter='') {
+  const query=filter.trim().toLowerCase();
+  const entries=Object.entries(HELP_ENTRIES).filter(([,entry])=>!query || `${entry.title} ${entry.group} ${entry.html}`.toLowerCase().includes(query));
+  const groups=[...new Set(entries.map(([,entry])=>entry.group))];
+  $('#page-help').innerHTML=`<div class="help-search"><div class="search-input"><span>⌕</span><input id="helpSearch" placeholder="Search Help" value="${esc(filter)}"></div></div><div class="help-layout">
+    <nav class="help-toc">${groups.map(group=>`<a href="#help-group-${group.replace(/\W+/g,'-').toLowerCase()}">${esc(group)}</a>`).join('')}</nav>
+    <article class="help-content">${entries.length?groups.map(group=>`<section class="help-section" id="help-group-${group.replace(/\W+/g,'-').toLowerCase()}"><p class="eyebrow">${esc(group.toUpperCase())}</p><h2>${esc(group)}</h2>${entries.filter(([,entry])=>entry.group===group).map(([id,entry])=>`<div id="help-${id}"><h3>${esc(entry.title)}</h3>${entry.html}</div>`).join('')}</section>`).join(''):'<div class="empty-state"><h2>No Help Entries Found</h2><p>Try a different search term.</p></div>'}</article>
+  </div>`;
+}
+
+function openContextHelp(id) {
+  const entry=HELP_ENTRIES[id];
+  if(!entry){toast('This Help entry is unavailable.','error');return;}
+  $('#contextHelpTitle').textContent=entry.title;
+  $('#contextHelpBody').innerHTML=entry.html;
+  $('#helpDialog').showModal();
+}
+
+function verifyHelpCoverage() {
+  const missing=$$('[data-help]').map(button=>button.dataset.help).filter(id=>!HELP_ENTRIES[id]);
+  if(missing.length) console.error('Missing Help entries:',[...new Set(missing)]);
+}
+
 function renderSettings() {
   const s=state.data.settings;
   $('#page-settings').innerHTML=`<div class="settings-grid">
-    <section class="setting-card"><h2>Dashboard window</h2><p>Choose how far ahead the overview looks.</p><label>Days<input id="settingWindow" type="number" min="1" max="365" value="${s.dashboard_window_days}"></label><button class="button" style="margin-top:12px" id="saveWindow">Save</button></section>
-    <section class="setting-card"><h2>Notifications</h2><p>Choose Home Assistant Companion devices and the daily check hour.</p><button class="button" id="configureNotifications">Configure devices</button></section>
-    <section class="setting-card"><h2>Manual export</h2><p>Download the database and every managed attachment as one portable ZIP.</p><a class="button" href="api/export" style="display:inline-block;text-decoration:none">Download full export</a></section>
-    <section class="setting-card"><h2>Manual import</h2><p>Replace current tracker data with a previously exported ZIP.</p><input id="importFile" type="file" accept=".zip"><button class="button danger" style="margin-top:12px" id="importData">Import and replace</button></section>
-    <section class="setting-card full"><h2>Fictional sample data</h2><p>${s.sample_data_installed ? 'The sample property, equipment, tasks, meters, and history are installed. Removing them does not affect records you created.' : 'The sample dataset has been removed. You may reinstall it for training at any time.'}</p><button class="button ${s.sample_data_installed?'danger':''}" id="toggleSample">${s.sample_data_installed?'Remove sample data':'Reinstall sample data'}</button></section>
-    <section class="setting-card full"><h2>About</h2><p>Home Maintenance Tracker ${state.data.version}. Local data is stored in SQLite with managed attachment storage. Routine protection is provided through Home Assistant backups.</p><button class="button" data-page="help">Open complete Help</button></section>
+    <section class="setting-card"><div class="section-title"><h2>Dashboard Window</h2>${helpButton('settings-window')}</div><p>Choose how far ahead the overview looks.</p><label>Days<input id="settingWindow" type="number" min="1" max="365" value="${s.dashboard_window_days}"></label><button class="button" style="margin-top:12px" id="saveWindow">Save</button></section>
+    <section class="setting-card"><div class="section-title"><h2>Notifications</h2>${helpButton('settings-notifications')}</div><p>Choose Home Assistant Companion devices and the daily check hour.</p><button class="button" id="configureNotifications">Configure Devices</button></section>
+    <section class="setting-card"><div class="section-title"><h2>Manual Export</h2>${helpButton('settings-export')}</div><p>Download the database and every managed attachment as one portable ZIP.</p><a class="button" href="api/export" style="display:inline-block;text-decoration:none">Download Full Export</a></section>
+    <section class="setting-card"><div class="section-title"><h2>Manual Import</h2>${helpButton('settings-import')}</div><p>Replace current tracker data with a previously exported ZIP.</p><input id="importFile" type="file" accept=".zip"><button class="button danger" style="margin-top:12px" id="importData">Import and Replace</button></section>
+    <section class="setting-card full"><div class="section-title"><h2>Fictional Sample Data</h2>${helpButton('settings-sample')}</div><p>${s.sample_data_installed ? 'The sample property, equipment, tasks, meters, and history are installed. Removing them does not affect records you created.' : 'The sample dataset has been removed. You may reinstall it for training at any time.'}</p><button class="button ${s.sample_data_installed?'danger':''}" id="toggleSample">${s.sample_data_installed?'Remove Sample Data':'Reinstall Sample Data'}</button></section>
+    <section class="setting-card full"><div class="section-title"><h2>About</h2>${helpButton('backup-home-assistant')}</div><p>Home Maintenance Tracker ${state.data.version}. Local data is stored in SQLite with managed attachment storage. Routine protection is provided through Home Assistant backups.</p><button class="button" data-page="help">Open Complete Help</button></section>
   </div>`;
 }
 
 function renderAll() {
-  renderDashboard(); renderAssets(); renderMaintenance(); renderMeters(); renderReports(); renderHelp(); renderSettings();
+  renderDashboard(); renderAssets(); renderMaintenance(); renderMeters(); renderReports(); renderHelpMaster(); renderSettings();
   applyTheme(localStorage.getItem('hmt-theme') || state.data.settings.theme || 'system');
+  verifyHelpCoverage();
 }
 
-function openModal({title, eyebrow='DETAILS', body, submit='Save', onSubmit, danger=false, wide=false}) {
+function openModal({title, eyebrow='DETAILS', body, submit='Save', onSubmit, danger=false, wide=false, helpId=null}) {
+  helpId=helpId||({
+    'MATERIAL HISTORY':'asset-record','SCHEDULING':'maintenance-task','MAINTENANCE TASK':'maintenance-task',
+    'COMPLETION RECORD':'maintenance-completion','REVIEW & APPROVE':'maintenance-completion','TEMPORARY REMINDER':'maintenance-snooze',
+    'MANAGED STORAGE':'attachments','ITEM LIFECYCLE':'asset-lifecycle','HIERARCHY':'asset-hierarchy',
+    'RECORD RETENTION':'asset-lifecycle','GUIDED REPLACEMENT':'asset-lifecycle','DESTRUCTIVE ACTION':'asset-lifecycle',
+    'PRINTABLE LABEL':'asset-qr','HOME ASSISTANT':'settings-notifications'
+  }[eyebrow]||'screen-help');
   $('#modalTitle').textContent=title; $('#modalEyebrow').textContent=eyebrow; $('#modalBody').innerHTML=body;
   $('#modalSubmit').textContent=submit; $('#modalSubmit').className=`button ${danger?'danger':'primary'}`;
   $('#modal').classList.toggle('wide',wide); $('#modalSubmit').onclick=async()=>{ try { $('#modalSubmit').disabled=true; await onSubmit?.(); } catch(e){toast(e.message,'error');} finally{$('#modalSubmit').disabled=false;} };
+  $('#modalHelp').classList.toggle('hidden',!helpId); $('#modalHelp').dataset.help=helpId||'';
   $('#modal').showModal();
 }
 function closeModal(){ $('#modal').close(); }
@@ -374,7 +412,7 @@ async function openTaskForm(task=null, assetId=null) {
     await api(task?`api/tasks/${task.id}`:'api/tasks',{method:task?'PUT':'POST',body});closeModal();await refresh({quiet:true});navigate('maintenance');toast(task?'Task updated.':'Task created.');
   }});
   $('#taskAsset').value=task?.asset_id||assetId||'';
-  const fillMeters=async(selected=task?.meter_id)=>{const meters=await api('api/meters');const asset=$('#taskAsset').value;$('#taskMeter') && ($('#taskMeter').innerHTML='<option value="">Choose a meter…</option>'+meters.filter(m=>!asset||m.asset_id===asset).map(m=>`<option value="${m.id}" ${selected===m.id?'selected':''}>${esc(m.name)} (${esc(m.unit)})</option>`).join(''));};
+  const fillMeters=async(selected=task?.meter_id)=>{const meters=await api('api/meters');const asset=$('#taskAsset').value;if(!$('#taskMeter'))return;const available=asset?meters.filter(m=>m.asset_id===asset):[];$('#taskMeter').innerHTML=!asset?'<option value="" selected disabled>Choose an item first…</option>':available.length?'<option value="">Choose a meter…</option>'+available.map(m=>`<option value="${m.id}" ${selected===m.id?'selected':''}>${esc(m.name)} (${esc(m.unit)})</option>`).join(''):'<option value="" selected disabled>No meters configured for this item</option>';};
   await fillMeters(); $('#taskAsset').onchange=()=>fillMeters();
   $('#scheduleType').onchange=()=>{const values={};new FormData($('#modalForm')).forEach((v,k)=>values[k]=v);$('#dynamicSchedule').innerHTML=scheduleFields($('#scheduleType').value,values);fillMeters(values.meter_id);};
 }
@@ -423,13 +461,53 @@ function openUpload(ownerType, ownerId) {
   openModal({title:'Upload attachment',eyebrow:'MANAGED STORAGE',body:`<div class="form-grid"><label class="full">Category<select name="category">${[['manual','Manual'],['receipt','Receipt'],['warranty','Warranty'],['diagram','Diagram'],['photograph','Photograph'],['video','Video'],['service_record','Service record'],['other','Other']].map(([v,l])=>`<option value="${v}">${l}</option>`).join('')}</select></label><label class="full">File<input name="file" type="file"></label><p class="form-note full">The file is copied into managed storage and included in full export and Home Assistant backup data.</p></div>`,submit:'Upload',onSubmit:async()=>{const f=$('#modalForm').elements;if(!f.file.files[0])throw new Error('Choose a file.');const body=new FormData();body.append('owner_type',ownerType);body.append('owner_id',ownerId);body.append('category',f.category.value);body.append('file',f.file.files[0]);await api('api/attachments',{method:'POST',body});closeModal();if(ownerType==='asset')loadAssetDetail(ownerId);toast('Attachment uploaded.');}});
 }
 
-function openNewMeter(assetId) {
-  openModal({title:'Add meter',eyebrow:'USAGE TRACKING',body:`<div class="form-grid"><label class="full">Meter name<input name="name" placeholder="Odometer, engine hours, cycles…"></label><label>Type<select name="kind"><option value="mileage">Mileage</option><option value="runtime">Runtime</option><option value="cycles">Cycles / counts</option><option value="quantity">Quantity</option></select></label><label>Unit<input name="unit" placeholder="miles, hours, cycles, gallons…"></label></div>`,submit:'Add meter',onSubmit:async()=>{const f=$('#modalForm').elements;await api('api/meters',{method:'POST',body:{asset_id:assetId,name:f.name.value,kind:f.kind.value,unit:f.unit.value}});closeModal();await refresh({quiet:true});loadAssetDetail(assetId);toast('Meter added.');}});
+const localDateTime=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
+const meterTypeLabels={mileage:'Distance / Mileage',runtime:'Runtime',cycles:'Counts / Cycles',volume:'Volume',energy:'Energy',mass:'Mass'};
+function meterTypeOptions(selected='mileage'){return `${state.data.meter_units[selected]?'':`<option value="${esc(selected)}" selected disabled>Legacy Type — Choose a Standard Type</option>`}${Object.keys(state.data.meter_units).map(kind=>`<option value="${kind}" ${kind===selected?'selected':''}>${meterTypeLabels[kind]||kind}</option>`).join('')}`;}
+function meterUnitOptions(kind,selected=''){const units=state.data.meter_units[kind]||[];return units.length?units.map(unit=>`<option value="${esc(unit)}" ${unit===selected?'selected':''}>${esc(unit)}</option>`).join(''):`<option value="${esc(selected)}" selected disabled>Choose a Standard Type First</option>`;}
+
+async function meterById(meterId){return (await api('api/meters?include_archived=1')).find(m=>m.id===meterId);}
+
+function openMeterForm(meter=null, assetId=null, chooseAsset=false) {
+  const kind=meter?.kind||'mileage';
+  const unit=state.data.meter_units[kind]?.includes(meter?.unit)?meter.unit:(meter?.unit||state.data.meter_units[kind]?.[0]||'');
+  openModal({title:meter?'Edit Meter':'Add Meter',eyebrow:'USAGE TRACKING',helpId:'meters-create',body:`<div class="form-grid">${chooseAsset&&!meter?`<label class="full">Item<select name="asset_id"><option value="">Choose an item…</option>${assetOptions({includeRoot:false})}</select></label>`:''}<label class="full">Meter Name<input name="name" value="${esc(meter?.name||'')}" placeholder="Odometer, engine hours, cycles…" required></label><label>Type<select name="kind" id="meterKind">${meterTypeOptions(kind)}</select></label><label>Unit<select name="unit" id="meterUnit">${meterUnitOptions(kind,unit)}</select></label>${meter?'':'<label>Initial Reading (optional)<input name="initial_reading" type="number" min="0" step="0.01"></label><label>Initial Reading Time<input name="initial_recorded_at" type="datetime-local" value="'+localDateTime()+'"></label>'}<p class="form-note full">Use one consistent unit. Changing a meter unit does not convert existing readings or maintenance thresholds.</p></div>`,submit:meter?'Save Meter':'Add Meter',onSubmit:async()=>{
+    const f=$('#modalForm').elements;const selectedAsset=meter?.asset_id||assetId||f.asset_id?.value;
+    if(!selectedAsset)throw new Error('Choose an item for this meter.');
+    if(meter&&f.unit.value!==meter.unit&&(meter.reading_count||meter.task_count)&&!confirm('Changing the unit will not convert existing readings or maintenance thresholds. Continue?'))return;
+    const body={asset_id:selectedAsset,name:f.name.value,kind:f.kind.value,unit:f.unit.value,initial_reading:f.initial_reading?.value||null,initial_recorded_at:f.initial_recorded_at?.value?new Date(f.initial_recorded_at.value).toISOString():null};
+    await api(meter?`api/meters/${meter.id}`:'api/meters',{method:meter?'PUT':'POST',body});closeModal();await refresh({quiet:true});if(state.page==='assets'&&selectedAsset)loadAssetDetail(selectedAsset);else navigate('meters');toast(meter?'Meter updated.':'Meter added.');
+  }});
+  $('#meterKind').onchange=()=>{$('#meterUnit').innerHTML=meterUnitOptions($('#meterKind').value);};
+}
+
+function openNewMeter(assetId){openMeterForm(null,assetId,false);}
+
+async function openEditMeter(meterId){const meter=await meterById(meterId);if(meter)openMeterForm(meter);}
+
+async function openSingleReading(meterId) {
+  const meter=await meterById(meterId);if(!meter||meter.archived)return toast('This meter is archived or unavailable.','error');
+  openModal({title:`Update ${meter.name}`,eyebrow:'INDIVIDUAL READING',helpId:'meters-update',body:`<div class="form-grid"><div class="field full"><dt>Item</dt><dd>${esc(meter.asset_name)}</dd></div><div class="field"><dt>Current Reading</dt><dd>${meter.latest?`${Number(meter.latest.reading).toLocaleString()} ${esc(meter.unit)}`:'No Reading'}</dd></div><label>Reading<input name="reading" type="number" min="${meter.latest?.reading??0}" step="0.01" required autofocus></label><label class="full">Reading Date and Time<input name="recorded_at" type="datetime-local" value="${localDateTime()}"></label><label class="full">Note (optional)<input name="note"></label></div>`,submit:'Save Reading',onSubmit:async()=>{const f=$('#modalForm').elements;await api('api/meters/readings',{method:'POST',body:{readings:[{meter_id:meter.id,reading:f.reading.value,recorded_at:new Date(f.recorded_at.value).toISOString(),note:f.note.value}]}});closeModal();await refresh({quiet:true});navigate('meters');toast('Meter reading saved.');}});
 }
 
 async function openReadings() {
   const meters=await api('api/meters');
-  openModal({title:'Update meter readings',eyebrow:'QUICK ENTRY',body:`<p class="form-note">Enter only the meters you checked. Every submitted reading receives the selected date and time.</p><label>Reading date and time<input id="readingTime" type="datetime-local" value="${new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16)}"></label><div class="dense-table-wrap" style="margin-top:14px"><table><thead><tr><th>Item</th><th>Meter</th><th>Current</th><th>New reading</th></tr></thead><tbody>${meters.map(m=>`<tr data-meter-row="${m.id}"><td>${esc(m.asset_name)}</td><td>${esc(m.name)}</td><td>${m.latest?Number(m.latest.reading).toLocaleString():'—'} ${esc(m.unit)}</td><td><input type="number" min="${m.latest?.reading??0}" step="0.01" placeholder="Not checked"></td></tr>`).join('')}</tbody></table></div>`,submit:'Save entered readings',onSubmit:async()=>{const recorded_at=new Date($('#readingTime').value).toISOString();const readings=$$('[data-meter-row]').map(row=>({meter_id:row.dataset.meterRow,reading:$('input',row).value,recorded_at})).filter(x=>x.reading!=='');if(!readings.length)throw new Error('Enter at least one reading.');await api('api/meters/readings',{method:'POST',body:{readings}});closeModal();await refresh({quiet:true});navigate('meters');toast(`${readings.length} reading${readings.length===1?'':'s'} saved.`);}});
+  if(!meters.length)return openModal({title:'Update Meter Readings',eyebrow:'QUICK ENTRY',helpId:'meters-update',body:'<div class="empty-state"><h2>No Meters Configured</h2><p>Create a meter before entering readings.</p><button type="button" class="button primary" data-new-meter-page>＋ New Meter</button></div>',submit:'Close',onSubmit:closeModal});
+  openModal({title:'Update Meter Readings',eyebrow:'QUICK ENTRY',helpId:'meters-update',body:`<p class="form-note">Enter only the meters you checked. Every submitted reading receives the selected date and time.</p><label>Reading Date and Time<input id="readingTime" type="datetime-local" value="${localDateTime()}"></label><div class="dense-table-wrap" style="margin-top:14px"><table><thead><tr><th>Item</th><th>Meter</th><th>Current</th><th>New Reading</th></tr></thead><tbody>${meters.map(m=>`<tr data-meter-row="${m.id}"><td>${esc(m.asset_name)}</td><td>${esc(m.name)}</td><td>${m.latest?Number(m.latest.reading).toLocaleString():'—'} ${esc(m.unit)}</td><td><input type="number" min="${m.latest?.reading??0}" step="0.01" placeholder="Not Checked"></td></tr>`).join('')}</tbody></table></div>`,submit:'Save Entered Readings',onSubmit:async()=>{const recorded_at=new Date($('#readingTime').value).toISOString();const readings=$$('[data-meter-row]').map(row=>({meter_id:row.dataset.meterRow,reading:$('input',row).value,recorded_at})).filter(x=>x.reading!=='');if(!readings.length)throw new Error('Enter at least one reading.');await api('api/meters/readings',{method:'POST',body:{readings}});closeModal();await refresh({quiet:true});navigate('meters');toast(`${readings.length} reading${readings.length===1?'':'s'} saved.`);}});
+}
+
+async function openMeterQr(meterId) {
+  const meter=await meterById(meterId),appInfo=await api('api/ha/app-info');if(!meter)return;
+  const base=appInfo.panel_path?`${location.origin}${appInfo.panel_path}`:location.href.split(/[?#]/)[0];
+  const url=`${base}?meter=${encodeURIComponent(meterId)}`;
+  openModal({title:`QR Label: ${meter.name}`,eyebrow:'PRINTABLE QUICK ENTRY',helpId:'meters-qr',body:`<div style="text-align:center"><img src="api/meters/${meter.id}/qr?url=${encodeURIComponent(url)}" alt="QR code for ${esc(meter.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(meter.asset_name)} — ${esc(meter.name)}</h3><p class="subtle">Scanning opens this meter’s individual reading form. Home Assistant sign-in is required.</p><button type="button" class="button" onclick="window.print()">Print Label</button></div>`,submit:'Close',onSubmit:closeModal});
+}
+
+async function openManageMeter(meterId) {
+  const meter=await meterById(meterId);if(!meter)return;
+  const permanent=meter.reading_count===0&&meter.task_count===0;
+  const warning=meter.active_task_count?`<p class="form-note danger-note">This meter is used by ${meter.active_task_count} active maintenance task${meter.active_task_count===1?'':'s'}. Change or cancel those tasks before archiving it.</p>`:'';
+  openModal({title:`Manage ${meter.name}`,eyebrow:'METER LIFECYCLE',helpId:'meters-manage',body:`${warning}<p>${meter.reading_count} recorded reading${meter.reading_count===1?'':'s'} · ${meter.task_count} linked task${meter.task_count===1?'':'s'}</p><div class="toolbar-group">${meter.archived?`<button type="button" class="button" data-restore-meter="${meter.id}">Restore Meter</button>`:permanent?`<button type="button" class="button danger" data-delete-meter="${meter.id}">Delete Permanently</button>`:`<button type="button" class="button danger" data-archive-meter="${meter.id}" ${meter.active_task_count?'disabled':''}>Archive Meter</button>`}</div>`,submit:'Close',onSubmit:closeModal});
 }
 
 function openAssetActions(assetId) {
@@ -487,6 +565,7 @@ function applyTheme(theme) {
 
 document.addEventListener('click', async event => {
   const target=event.target.closest('button,a,tr,[data-asset-id],[data-task-id]'); if(!target)return;
+  if(target.dataset.help){openContextHelp(target.dataset.help);return;}
   if(target.dataset.page){event.preventDefault();navigate(target.dataset.page);return;}
   if(target.dataset.go){navigate(target.dataset.go);return;}
   if(target.dataset.action==='new-asset'){openAssetForm();return;}
@@ -507,6 +586,14 @@ document.addEventListener('click', async event => {
   if(target.dataset.uploadOwner){openUpload(target.dataset.uploadOwner,target.dataset.ownerId);return;}
   if(target.dataset.deleteAttachment){if(confirm('Delete this attachment?')){await api(`api/attachments/${target.dataset.deleteAttachment}`,{method:'DELETE'});loadAssetDetail(state.selectedAsset);toast('Attachment deleted.');}return;}
   if(target.dataset.newMeter){openNewMeter(target.dataset.newMeter);return;}
+  if(target.dataset.newMeterPage!==undefined){if($('#modal').open)closeModal();openMeterForm(null,null,true);return;}
+  if(target.dataset.updateMeter){if($('#modal').open)closeModal();openSingleReading(target.dataset.updateMeter);return;}
+  if(target.dataset.meterQr){if($('#modal').open)closeModal();openMeterQr(target.dataset.meterQr);return;}
+  if(target.dataset.editMeter){if($('#modal').open)closeModal();openEditMeter(target.dataset.editMeter);return;}
+  if(target.dataset.manageMeter){openManageMeter(target.dataset.manageMeter);return;}
+  if(target.dataset.archiveMeter){if(confirm('Archive this meter? Its history will remain available.')){await api(`api/meters/${target.dataset.archiveMeter}/archive`,{method:'POST'});closeModal();await refresh({quiet:true});navigate('meters');toast('Meter archived.');}return;}
+  if(target.dataset.deleteMeter){if(confirm('Permanently delete this unused meter? This cannot be undone.')){await api(`api/meters/${target.dataset.deleteMeter}`,{method:'DELETE'});closeModal();await refresh({quiet:true});navigate('meters');toast('Meter permanently deleted.');}return;}
+  if(target.dataset.restoreMeter){await api(`api/meters/${target.dataset.restoreMeter}/restore`,{method:'POST'});if($('#modal').open)closeModal();await refresh({quiet:true});navigate('meters');toast('Meter restored.');return;}
   if(target.dataset.complete){event.stopPropagation();openComplete(target.dataset.complete);return;}
   if(target.dataset.taskId){openTaskDetail(target.dataset.taskId);return;}
   if(target.dataset.modalComplete){closeModal();openComplete(target.dataset.modalComplete);return;}
@@ -522,8 +609,9 @@ document.addEventListener('click', async event => {
 document.addEventListener('input',event=>{
   if(event.target.id==='assetSearch'){const value=event.target.value;renderAssets();const input=$('#assetSearch');input.value=value;input.focus();input.setSelectionRange(value.length,value.length);}
   if(event.target.id==='assetTableSearch'){const query=event.target.value.toLowerCase();$$('#page-assets tbody tr').forEach(row=>row.classList.toggle('hidden',!row.textContent.toLowerCase().includes(query)));}
+  if(event.target.id==='helpSearch'){const value=event.target.value;renderHelpMaster(value);const input=$('#helpSearch');input.focus();input.setSelectionRange(value.length,value.length);}
 });
-document.addEventListener('change',event=>{if(event.target.id==='showArchived')renderAssets();if(event.target.id==='reportSelect')state.report=event.target.value;});
+document.addEventListener('change',event=>{if(event.target.id==='showArchived')renderAssets();if(event.target.id==='showArchivedMeters'){state.showArchivedMeters=event.target.checked;renderMeters();}if(event.target.id==='reportSelect')state.report=event.target.value;});
 
 document.addEventListener('dragstart',event=>{const row=event.target.closest('[data-drag-id]');if(row)event.dataTransfer.setData('text/plain',row.dataset.dragId);});
 document.addEventListener('dragover',event=>{const row=event.target.closest('[data-drop-id]');if(row){event.preventDefault();row.classList.add('drag-over');}});
@@ -533,6 +621,13 @@ document.addEventListener('drop',async event=>{const row=event.target.closest('[
 $('#nav').addEventListener('click',()=>{});
 $('#quickAdd').onclick=()=>state.page==='maintenance'?openTaskForm():state.page==='meters'?openReadings():openAssetForm();
 $('#themeToggle').onclick=()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+$('#modalClose').onclick=closeModal;
+$('#modalCancel').onclick=closeModal;
+$('#modalForm').onsubmit=event=>{event.preventDefault();$('#modalSubmit').click();};
+$('#helpClose').onclick=()=>$('#helpDialog').close();
+$('#helpDone').onclick=()=>$('#helpDialog').close();
+$('#helpFull').onclick=()=>{$('#helpDialog').close();navigate('help');};
+$('#sidebarToggle').onclick=()=>{const collapsed=!$('#app').classList.contains('sidebar-collapsed');$('#app').classList.toggle('sidebar-collapsed',collapsed);localStorage.setItem('hmt-sidebar-collapsed',String(collapsed));$('#sidebarToggle').setAttribute('aria-label',collapsed?'Expand sidebar':'Minimize sidebar');$('#sidebarToggle').title=collapsed?'Expand sidebar':'Minimize sidebar';};
 document.addEventListener('click',async e=>{
   if(e.target.id==='runReport')runReport($('#reportSelect').value);
   if(e.target.id==='saveWindow'){await api('api/settings',{method:'PUT',body:{dashboard_window_days:Number($('#settingWindow').value)}});await refresh({quiet:true});toast('Dashboard window saved.');}
@@ -542,6 +637,8 @@ document.addEventListener('click',async e=>{
 });
 
 function routedAssetId(){return new URLSearchParams(location.search).get('asset') || location.hash.match(/^#\/asset\/(.+)$/)?.[1] || null;}
+function routedMeterId(){return new URLSearchParams(location.search).get('meter') || location.hash.match(/^#\/meter\/(.+)$/)?.[1] || null;}
 window.addEventListener('hashchange',()=>{const id=routedAssetId();if(id&&state.data){state.selectedAsset=id;state.assetView='tree';navigate('assets');}});
 
-refresh().then(()=>{const id=routedAssetId();if(id){state.selectedAsset=id;state.assetView='tree';navigate('assets');}});
+$('#app').classList.toggle('sidebar-collapsed',localStorage.getItem('hmt-sidebar-collapsed')==='true');
+refresh().then(()=>{const meterId=routedMeterId(),assetId=routedAssetId();if(meterId){navigate('meters');openSingleReading(meterId);}else if(assetId){state.selectedAsset=assetId;state.assetView='tree';navigate('assets');}});

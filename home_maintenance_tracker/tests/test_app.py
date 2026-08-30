@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+import re
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -187,6 +188,63 @@ class TrackerTests(unittest.TestCase):
             response = self.client.get(f"/api/reports/{name}")
             self.assertEqual(response.status_code, 200, name)
             self.assertIsInstance(response.get_json(), list)
+
+    def test_11_meter_lifecycle_standard_units_and_qr(self):
+        asset = self.client.post("/api/assets", json={"name": "Meter Lifecycle Unit"}).get_json()
+        invalid = self.client.post("/api/meters", json={
+            "asset_id": asset["id"], "name": "Invalid", "kind": "runtime", "unit": "fortnights",
+        })
+        self.assertEqual(invalid.status_code, 400)
+        meter_response = self.client.post("/api/meters", json={
+            "asset_id": asset["id"], "name": "Hours", "kind": "runtime", "unit": "hours",
+            "initial_reading": 10, "initial_recorded_at": "2026-08-30T12:00:00+00:00",
+        })
+        self.assertEqual(meter_response.status_code, 201, meter_response.get_json())
+        meter = meter_response.get_json()
+        listed = self.client.get("/api/meters").get_json()
+        created = next(item for item in listed if item["id"] == meter["id"])
+        self.assertEqual(created["reading_count"], 1)
+        self.assertEqual(created["latest"]["reading"], 10)
+        qr = self.client.get(f"/api/meters/{meter['id']}/qr?url=https%3A%2F%2Fexample.test%2Fmeter")
+        self.assertEqual(qr.status_code, 200)
+        self.assertEqual(qr.mimetype, "image/svg+xml")
+        self.assertEqual(self.client.post(f"/api/meters/{meter['id']}/archive").status_code, 200)
+        self.assertFalse(any(item["id"] == meter["id"] for item in self.client.get("/api/meters").get_json()))
+        archived = self.client.get("/api/meters?include_archived=1").get_json()
+        self.assertTrue(next(item for item in archived if item["id"] == meter["id"])["archived"])
+        self.assertEqual(self.client.post(f"/api/meters/{meter['id']}/restore").status_code, 200)
+
+    def test_12_active_task_blocks_meter_archive_and_unused_meter_deletes(self):
+        asset = self.client.post("/api/assets", json={"name": "Meter Task Unit"}).get_json()
+        meter = self.client.post("/api/meters", json={
+            "asset_id": asset["id"], "name": "Odometer", "kind": "mileage", "unit": "miles",
+        }).get_json()
+        task = self.client.post("/api/tasks", json={
+            "asset_id": asset["id"], "title": "Meter Task", "schedule_type": "meter",
+            "meter_id": meter["id"], "meter_interval": 5000, "start_date": "2026-08-30",
+        }).get_json()
+        self.assertEqual(self.client.post(f"/api/meters/{meter['id']}/archive").status_code, 409)
+        self.client.post(f"/api/tasks/{task['id']}/cancel", json={"reason": "Test cancellation"})
+        self.assertEqual(self.client.post(f"/api/meters/{meter['id']}/archive").status_code, 200)
+        unused = self.client.post("/api/meters", json={
+            "asset_id": asset["id"], "name": "Starts", "kind": "cycles", "unit": "starts",
+        }).get_json()
+        self.assertEqual(self.client.delete(f"/api/meters/{unused['id']}").status_code, 200)
+
+    def test_13_modal_cancel_controls_and_help_coverage(self):
+        static_dir = Path(__file__).resolve().parents[1] / "static"
+        html = (static_dir / "index.html").read_text()
+        app_js = (static_dir / "app.js").read_text()
+        help_js = (static_dir / "help.js").read_text()
+        self.assertIn('id="modalClose"', html)
+        self.assertIn('id="modalCancel"', html)
+        self.assertNotIn('<form method="dialog" class="modal-card" id="modalForm">', html)
+        entries = set(re.findall(r"^  '([^']+)': \{title:", help_js, re.MULTILINE))
+        used = set(re.findall(r"helpButton\('([^']+)'\)|helpId:'([^']+)'|data-help=\"([^\"]+)\"", app_js + html))
+        used_ids = {value for match in used for value in match if value}
+        self.assertFalse(used_ids - entries, f"Missing Help entries: {used_ids - entries}")
+        self.assertIn("screen-dashboard", entries)
+        self.assertIn("meters-manage", entries)
 
 
 if __name__ == "__main__":

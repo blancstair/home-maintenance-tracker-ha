@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS meters (
     name TEXT NOT NULL,
     kind TEXT NOT NULL,
     unit TEXT NOT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    archived_at TEXT,
     is_sample INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
@@ -211,6 +213,12 @@ def initialize_database() -> None:
         task_columns = {row["name"] for row in db.execute("PRAGMA table_info(maintenance_tasks)")}
         if "last_scheduled_due" not in task_columns:
             db.execute("ALTER TABLE maintenance_tasks ADD COLUMN last_scheduled_due TEXT")
+        meter_columns = {row["name"] for row in db.execute("PRAGMA table_info(meters)")}
+        if "archived" not in meter_columns:
+            db.execute("ALTER TABLE meters ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+        if "archived_at" not in meter_columns:
+            db.execute("ALTER TABLE meters ADD COLUMN archived_at TEXT")
+        db.execute("UPDATE meters SET kind='volume',unit='US gallons' WHERE is_sample=1 AND kind='quantity' AND unit='gallons'")
         for key, value in DEFAULT_SETTINGS.items():
             db.execute(
                 "INSERT OR IGNORE INTO settings(key, value) VALUES (?, ?)",
@@ -348,7 +356,10 @@ def seed_sample_data(db: sqlite3.Connection) -> None:
     def meter(key: str, asset_key: str, name: str, kind: str, unit: str, start: float, daily: float):
         meter_id = f"sample_meter_{key}"
         meters[key] = meter_id
-        db.execute("INSERT INTO meters VALUES (?,?,?,?,?,1,?)", (meter_id, asset_ids[asset_key], name, kind, unit, now))
+        db.execute(
+            "INSERT INTO meters(id,asset_id,name,kind,unit,archived,archived_at,is_sample,created_at) VALUES (?,?,?,?,?,0,NULL,1,?)",
+            (meter_id, asset_ids[asset_key], name, kind, unit, now),
+        )
         for days_ago in (180, 120, 60, 30, 7, 0):
             value = round(start + (180 - days_ago) * daily, 1)
             recorded = datetime.now(timezone.utc) - timedelta(days=days_ago)
@@ -361,7 +372,7 @@ def seed_sample_data(db: sqlite3.Connection) -> None:
     meter("generator_hours", "generator", "Engine Hours", "runtime", "hours", 121.0, 0.16)
     meter("generator_starts", "generator", "Generator Starts", "cycles", "starts", 88, 0.08)
     meter("dishwasher_cycles", "dishwasher", "Wash Cycles", "cycles", "cycles", 710, 0.8)
-    meter("water_gallons", "water_heater", "Hot Water Throughput", "quantity", "gallons", 91000, 64)
+    meter("water_gallons", "water_heater", "Hot Water Throughput", "volume", "US gallons", 91000, 64)
 
     def task(key: str, asset_key: str | None, title: str, *, schedule_type="calendar", calendar_value=None, calendar_unit=None, meter_key=None, meter_interval=None, combination_rule=None, days_since=0, start_offset=0, minutes=None, cost=None):
         task_id = f"sample_task_{key}"

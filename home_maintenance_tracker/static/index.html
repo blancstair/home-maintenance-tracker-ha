@@ -12,18 +12,19 @@
     <aside class="sidebar" aria-label="Primary navigation">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">⌂</span>
-        <span><strong>Home Maintenance</strong><small>Material History</small></span>
+        <span class="brand-label"><strong>Home Maintenance</strong><small>Material History</small></span>
+        <button type="button" class="sidebar-toggle" id="sidebarToggle" aria-label="Minimize sidebar" title="Minimize sidebar"><span aria-hidden="true">‹</span></button>
       </div>
       <nav id="nav">
-        <button data-page="dashboard" class="active"><span>◫</span> Dashboard</button>
-        <button data-page="assets"><span>◇</span> Assets</button>
-        <button data-page="maintenance"><span>✓</span> Maintenance</button>
-        <button data-page="meters"><span>⌁</span> Meter readings</button>
-        <button data-page="reports"><span>▤</span> Reports</button>
-        <button data-page="help"><span>?</span> Help</button>
+        <button data-page="dashboard" class="active" title="Dashboard"><span>◫</span><span class="nav-label">Dashboard</span></button>
+        <button data-page="assets" title="Assets"><span>◇</span><span class="nav-label">Assets</span></button>
+        <button data-page="maintenance" title="Maintenance"><span>✓</span><span class="nav-label">Maintenance</span></button>
+        <button data-page="meters" title="Meter Readings"><span>⌁</span><span class="nav-label">Meter Readings</span></button>
+        <button data-page="reports" title="Reports"><span>▤</span><span class="nav-label">Reports</span></button>
+        <button data-page="help" title="Help"><span>?</span><span class="nav-label">Help</span></button>
       </nav>
       <div class="sidebar-footer">
-        <button data-page="settings"><span>⚙</span> Settings</button>
+        <button data-page="settings" title="Settings"><span>⚙</span><span class="nav-label">Settings</span></button>
         <div class="version" id="version">Version</div>
       </div>
     </aside>
@@ -32,7 +33,7 @@
       <header class="topbar">
         <div>
           <p class="eyebrow" id="pageEyebrow">OVERVIEW</p>
-          <h1 id="pageTitle">Dashboard</h1>
+          <div class="title-with-help"><h1 id="pageTitle">Dashboard</h1><button type="button" class="help-button" id="pageHelp" data-help="screen-dashboard" aria-label="Help for Dashboard" title="Help for Dashboard">?</button></div>
         </div>
         <div class="top-actions">
           <button class="icon-button" id="themeToggle" aria-label="Toggle theme">◐</button>
@@ -62,11 +63,19 @@
   </div>
 
   <dialog id="modal" class="modal">
-    <form method="dialog" class="modal-card" id="modalForm">
-      <header><div><p class="eyebrow" id="modalEyebrow">DETAILS</p><h2 id="modalTitle">Modal</h2></div><button value="cancel" class="close-button" aria-label="Close">×</button></header>
+    <form class="modal-card" id="modalForm">
+      <header><div><p class="eyebrow" id="modalEyebrow">DETAILS</p><div class="title-with-help"><h2 id="modalTitle">Modal</h2><button type="button" class="help-button hidden" id="modalHelp" aria-label="Help">?</button></div></div><button type="button" class="close-button" id="modalClose" aria-label="Close">×</button></header>
       <div class="modal-body" id="modalBody"></div>
-      <footer id="modalFooter"><button value="cancel" class="button">Cancel</button><button type="button" class="button primary" id="modalSubmit">Save</button></footer>
+      <footer id="modalFooter"><button type="button" class="button" id="modalCancel">Cancel</button><button type="button" class="button primary" id="modalSubmit">Save</button></footer>
     </form>
+  </dialog>
+
+  <dialog id="helpDialog" class="modal help-dialog">
+    <article class="modal-card">
+      <header><div><p class="eyebrow">CONTEXTUAL HELP</p><h2 id="contextHelpTitle">Help</h2></div><button type="button" class="close-button" id="helpClose" aria-label="Close help">×</button></header>
+      <div class="modal-body rich-help" id="contextHelpBody"></div>
+      <footer><button type="button" class="button" id="helpFull">Open Complete Help</button><button type="button" class="button primary" id="helpDone">Done</button></footer>
+    </article>
   </dialog>
 
   <dialog id="setupDialog" class="modal setup-modal">
@@ -78,6 +87,7 @@
   </dialog>
 
   <div id="toastRegion" class="toast-region" aria-live="polite"></div>
+  <script src="static/help.js"></script>
   <script src="static/app.js"></script>
 </body>
 </html>

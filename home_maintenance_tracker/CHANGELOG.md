@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.0
+
+- Fixed Cancel and X controls being blocked by required-field validation in dialogs.
+- Added standardized imperial and metric meter units selected from type-specific lists.
+- Added meter creation from the Meter Readings screen, including an optional initial reading.
+- Added individual meter updates while preserving the existing multi-meter update workflow.
+- Added meter editing, safe permanent deletion, archival, restoration, and active-task safeguards.
+- Added printable per-meter QR labels that open the individual reading workflow.
+- Added a clear **No meters configured for this item** task-scheduling state.
+- Added an icon-only collapsible sidebar with labels on hover/focus and remembered preference.
+- Standardized screen and Dashboard section headings in Title Case.
+- Added contextual Help buttons for every screen and tool plus a searchable master Help reference.
+- Added automated meter-lifecycle, QR, dialog-cancellation, and Help-coverage tests.
+
 ## 0.1.0
 
 - Initial release.
@@ -12,4 +26,3 @@
 - Companion notification target selection, Nabu Casa-compatible Ingress, QR labels, and dark/mobile layouts.
 - Home Assistant backups plus application-level full export/import.
 - Large removable fictional sample dataset with no personal information.
-
