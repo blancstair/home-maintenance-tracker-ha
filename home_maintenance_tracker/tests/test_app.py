@@ -246,6 +246,21 @@ class TrackerTests(unittest.TestCase):
         self.assertIn("screen-dashboard", entries)
         self.assertIn("meters-manage", entries)
 
+    def test_14_companion_qr_and_touch_sidebar_regressions(self):
+        static_dir = Path(__file__).resolve().parents[1] / "static"
+        html = (static_dir / "index.html").read_text()
+        app_js = (static_dir / "app.js").read_text()
+        help_js = (static_dir / "help.js").read_text()
+        self.assertIn("homeassistant://navigate", app_js)
+        self.assertIn("&server=default", app_js)
+        self.assertIn("companionNavigateUrl(appInfo.panel_path,'meter',meterId)", app_js)
+        self.assertIn("companionNavigateUrl(appInfo.panel_path,'asset',assetId)", app_js)
+        self.assertNotIn("`${location.origin}${appInfo.panel_path}`", app_js)
+        self.assertIn("addEventListener('pointerup'", app_js)
+        self.assertIn("event.pointerType!=='touch'", app_js)
+        self.assertIn('aria-expanded="true"', html)
+        self.assertIn("regenerate previously printed labels", help_js)
+
 
 if __name__ == "__main__":
     unittest.main()

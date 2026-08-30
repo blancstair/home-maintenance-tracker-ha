@@ -25,7 +25,7 @@ The app checks once daily at the configured hour. It sends only overdue reminder
 
 Create meters from an item record or directly from **Meter Readings → New Meter**. Meter units come from standardized type-specific lists. Use the row-level **Update** action for one meter or **Update Readings** for several meters at once.
 
-Every active meter can produce a printable QR label. Scanning it opens that meter's individual reading form. Meters with no readings or linked tasks can be permanently deleted; meters with history are archived. An active maintenance task must be changed or canceled before its meter can be archived.
+Every active meter can produce a printable QR label. Scanning it launches Home Assistant Companion on Android or Apple devices and opens that meter's individual reading form. Meters with no readings or linked tasks can be permanently deleted; meters with history are archived. An active maintenance task must be changed or canceled before its meter can be archived.
 
 ## Contextual Help
 
@@ -33,13 +33,14 @@ Select the circled question mark beside any screen or tool title to open the rel
 
 ## Nabu Casa and QR labels
 
-Ingress uses your existing Home Assistant authentication. If you open Home Assistant through Nabu Casa, the app works inside that same connection. QR labels use the stable Home Assistant app-panel route rather than a temporary Ingress session address. Generate labels while using the Home Assistant address that the phone should later open. The scanning phone must be signed into Home Assistant.
+Ingress uses your existing Home Assistant authentication. If you open Home Assistant through Nabu Casa, the app works inside that same connection. QR labels use a `homeassistant://navigate` Companion deep link with the stable app-panel route and default registered server rather than a desktop web address or temporary Ingress session address. The label contains no credentials. Regenerate labels printed by version 0.2.0 after updating.
 
 ## Troubleshooting
 
 - **App does not appear:** In Settings → Apps → App store, select the three-dot menu and **Check for updates**, then refresh the browser.
 - **Build fails:** Confirm the mini PC has internet access and inspect the app build log. The first installation downloads the Home Assistant base image and three pinned Python packages.
 - **No phones listed:** Open or restart Home Assistant Companion on the phone and verify a `notify.mobile_app_*` action exists in Developer Tools.
-- **QR opens a sign-in page:** Sign into the same Home Assistant/Nabu Casa address and scan again.
+- **QR opens a browser or wrong screen:** Confirm Companion is installed and connected, choose the intended default Home Assistant server, and regenerate any label made by version 0.2.0.
+- **Tablet sidebar does not minimize:** Update to version 0.2.1 or later, fully reopen Companion, and tap the arrow. Phone layouts use bottom navigation instead.
 - **Import is rejected:** Only unmodified export ZIPs from this app are accepted.
 - **Video backup is too large:** Remove or compress large videos, download a manual export, or adjust the selected Home Assistant backup destination.

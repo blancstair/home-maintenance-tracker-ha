@@ -57,7 +57,7 @@ Removing the sample data does not remove records created by the user. The sample
 
 The primary sidebar provides access to Dashboard, Assets, Maintenance, Meter Readings, Reports, Help, and Settings.
 
-- Select the sidebar collapse button to switch to an icon-only navigation rail.
+- Select or tap the sidebar collapse button to switch to an icon-only navigation rail on computers and tablets.
 - Hover over or focus a collapsed icon to display its destination.
 - Use the theme button in the upper-right corner to switch between light and dark mode.
 - On phones, use the bottom navigation bar.
@@ -201,9 +201,9 @@ With sufficient timestamped history, the tracker estimates usage rate, remaining
 
 ### Meter QR Labels
 
-Select **QR** on a meter row to display and print its label. Generate the label while accessing Home Assistant through the address the scanning device should use, such as the configured Nabu Casa address.
+Select **QR** on a meter row to display and print its label. The QR code launches Home Assistant Companion on Android or Apple devices, selects the default registered Home Assistant server, and opens the meter's individual reading form. It does not contain credentials.
 
-The QR code opens the individual reading form and does not contain credentials. The scanning device must still authenticate with Home Assistant.
+After updating from version 0.2.0, regenerate previously printed item and meter labels. Older labels contain ordinary web addresses rather than Companion deep links.
 
 ### Manage a Meter
 
@@ -315,9 +315,16 @@ Download a manual export before uninstalling the application. Removing the appli
 
 Open every active maintenance task using that meter and reassign, change, or cancel the task. The meter can then be archived without losing its readings.
 
-### QR Code Opens Home Assistant Sign-In
+### QR Code Opens a Browser or the Wrong Screen
 
-Sign into the Home Assistant address encoded in the label. Regenerate the label while connected through the preferred local or Nabu Casa address if necessary.
+- Confirm Home Assistant Companion is installed and connected to the desired Home Assistant server.
+- If more than one server is registered, set the desired installation as the default server in Companion.
+- Regenerate labels created by version 0.2.0; the new label must contain a Companion deep link.
+- Android and Apple may ask permission the first time a scanner opens the Companion app.
+
+### Sidebar Does Not Minimize on a Tablet
+
+Confirm the installed application is version 0.2.1 or later, fully close and reopen Home Assistant Companion, and tap the arrow again. On phone-sized screens, the desktop sidebar is intentionally replaced by bottom navigation.
 
 ### Import Is Rejected
 
@@ -335,7 +342,7 @@ Home Assistant Ingress uses the existing Home Assistant authentication session. 
 
 ## Version
 
-Current release: **0.2.0**
+Current release: **0.2.1**
 
 See [`home_maintenance_tracker/CHANGELOG.md`](home_maintenance_tracker/CHANGELOG.md) for release details.
 

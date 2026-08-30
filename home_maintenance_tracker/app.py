@@ -42,7 +42,7 @@ from database import (
 from scheduling import enrich_task, parse_date, reminder_days
 
 
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 STATIC_DIR = Path(__file__).parent / "static"
 VALID_ATTACHMENT_CATEGORIES = {"manual", "receipt", "warranty", "diagram", "photograph", "video", "service_record", "other"}
 VALID_REMARK_CATEGORIES = {"preventive", "corrective", "observation", "lifecycle"}

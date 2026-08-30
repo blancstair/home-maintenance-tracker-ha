@@ -21,6 +21,14 @@ const today = () => new Date().toISOString().slice(0, 10);
 const fmtDate = value => value ? new Date(`${value.slice(0,10)}T12:00:00`).toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'}) : 'Not yet';
 const fmtMoney = value => value == null ? '—' : new Intl.NumberFormat(undefined, {style:'currency', currency:'USD'}).format(value);
 const fmtSize = bytes => bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes/1024).toFixed(1)} KB` : `${(bytes/1048576).toFixed(1)} MB`;
+const storageGet = key => { try { return localStorage.getItem(key); } catch (_) { return null; } };
+const storageSet = (key, value) => { try { localStorage.setItem(key, value); } catch (_) {} };
+
+function companionNavigateUrl(panelPath, route, id) {
+  if (!panelPath) throw new Error('Home Assistant Companion QR labels require the Home Assistant app panel.');
+  const separator=panelPath.includes('?')?'&':'?';
+  return `homeassistant://navigate${panelPath}${separator}${route}=${encodeURIComponent(id)}&server=default`;
+}
 
 async function api(url, options = {}) {
   const init = {...options, headers: {...(options.headers || {})}};
@@ -349,7 +357,7 @@ function renderSettings() {
 
 function renderAll() {
   renderDashboard(); renderAssets(); renderMaintenance(); renderMeters(); renderReports(); renderHelpMaster(); renderSettings();
-  applyTheme(localStorage.getItem('hmt-theme') || state.data.settings.theme || 'system');
+  applyTheme(storageGet('hmt-theme') || state.data.settings.theme || 'system');
   verifyHelpCoverage();
 }
 
@@ -498,9 +506,8 @@ async function openReadings() {
 
 async function openMeterQr(meterId) {
   const meter=await meterById(meterId),appInfo=await api('api/ha/app-info');if(!meter)return;
-  const base=appInfo.panel_path?`${location.origin}${appInfo.panel_path}`:location.href.split(/[?#]/)[0];
-  const url=`${base}?meter=${encodeURIComponent(meterId)}`;
-  openModal({title:`QR Label: ${meter.name}`,eyebrow:'PRINTABLE QUICK ENTRY',helpId:'meters-qr',body:`<div style="text-align:center"><img src="api/meters/${meter.id}/qr?url=${encodeURIComponent(url)}" alt="QR code for ${esc(meter.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(meter.asset_name)} — ${esc(meter.name)}</h3><p class="subtle">Scanning opens this meter’s individual reading form. Home Assistant sign-in is required.</p><button type="button" class="button" onclick="window.print()">Print Label</button></div>`,submit:'Close',onSubmit:closeModal});
+  let url;try{url=companionNavigateUrl(appInfo.panel_path,'meter',meterId);}catch(error){return toast(error.message,'error');}
+  openModal({title:`QR Label: ${meter.name}`,eyebrow:'PRINTABLE QUICK ENTRY',helpId:'meters-qr',body:`<div style="text-align:center"><img src="api/meters/${meter.id}/qr?url=${encodeURIComponent(url)}" alt="QR code for ${esc(meter.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(meter.asset_name)} — ${esc(meter.name)}</h3><p class="subtle">Scanning opens Home Assistant Companion on Android or Apple devices, then opens this meter’s individual reading form. The label contains no credentials.</p><button type="button" class="button" onclick="window.print()">Print Label</button></div>`,submit:'Close',onSubmit:closeModal});
 }
 
 async function openManageMeter(meterId) {
@@ -542,8 +549,8 @@ function openPermanentDelete(assetId) {
 
 async function openQr(assetId) {
   const asset=state.data.assets.find(a=>a.id===assetId), appInfo=await api('api/ha/app-info');
-  const url=appInfo.panel_path?`${location.origin}${appInfo.panel_path}?asset=${encodeURIComponent(assetId)}`:`${location.href.split(/[?#]/)[0]}?asset=${encodeURIComponent(assetId)}`;
-  openModal({title:`QR label: ${asset.name}`,eyebrow:'PRINTABLE LABEL',body:`<div style="text-align:center"><img src="api/assets/${assetId}/qr?url=${encodeURIComponent(url)}" alt="QR code for ${esc(asset.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(asset.name)}</h3><p class="subtle">Generated from ${esc(location.host)}. Scan using a phone signed into Home Assistant.</p><button type="button" class="button" onclick="window.print()">Print label</button></div>`,submit:'Close',onSubmit:closeModal});
+  let url;try{url=companionNavigateUrl(appInfo.panel_path,'asset',assetId);}catch(error){return toast(error.message,'error');}
+  openModal({title:`QR Label: ${asset.name}`,eyebrow:'PRINTABLE LABEL',body:`<div style="text-align:center"><img src="api/assets/${assetId}/qr?url=${encodeURIComponent(url)}" alt="QR code for ${esc(asset.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(asset.name)}</h3><p class="subtle">Scanning opens Home Assistant Companion on Android or Apple devices, then opens this item. The label contains no credentials.</p><button type="button" class="button" onclick="window.print()">Print Label</button></div>`,submit:'Close',onSubmit:closeModal});
 }
 
 async function configureNotifications(fromSetup=false) {
@@ -560,7 +567,7 @@ function startSetup() {
 
 function applyTheme(theme) {
   const effective=theme==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):theme;
-  document.documentElement.dataset.theme=effective; localStorage.setItem('hmt-theme',theme);
+  document.documentElement.dataset.theme=effective; storageSet('hmt-theme',theme);
 }
 
 document.addEventListener('click', async event => {
@@ -627,7 +634,24 @@ $('#modalForm').onsubmit=event=>{event.preventDefault();$('#modalSubmit').click(
 $('#helpClose').onclick=()=>$('#helpDialog').close();
 $('#helpDone').onclick=()=>$('#helpDialog').close();
 $('#helpFull').onclick=()=>{$('#helpDialog').close();navigate('help');};
-$('#sidebarToggle').onclick=()=>{const collapsed=!$('#app').classList.contains('sidebar-collapsed');$('#app').classList.toggle('sidebar-collapsed',collapsed);localStorage.setItem('hmt-sidebar-collapsed',String(collapsed));$('#sidebarToggle').setAttribute('aria-label',collapsed?'Expand sidebar':'Minimize sidebar');$('#sidebarToggle').title=collapsed?'Expand sidebar':'Minimize sidebar';};
+function setSidebarCollapsed(collapsed) {
+  $('#app').classList.toggle('sidebar-collapsed',collapsed);
+  storageSet('hmt-sidebar-collapsed',String(collapsed));
+  const toggle=$('#sidebarToggle'), label=collapsed?'Expand sidebar':'Minimize sidebar';
+  toggle.setAttribute('aria-label',label);toggle.setAttribute('aria-expanded',String(!collapsed));toggle.title=label;
+}
+const sidebarToggle=$('#sidebarToggle');
+let sidebarPointerHandled=false;
+sidebarToggle.addEventListener('pointerup',event=>{
+  if(event.pointerType!=='touch'&&event.pointerType!=='pen')return;
+  event.preventDefault();sidebarPointerHandled=true;
+  setSidebarCollapsed(!$('#app').classList.contains('sidebar-collapsed'));
+  setTimeout(()=>{sidebarPointerHandled=false;},450);
+});
+sidebarToggle.addEventListener('click',event=>{
+  event.preventDefault();if(sidebarPointerHandled)return;
+  setSidebarCollapsed(!$('#app').classList.contains('sidebar-collapsed'));
+});
 document.addEventListener('click',async e=>{
   if(e.target.id==='runReport')runReport($('#reportSelect').value);
   if(e.target.id==='saveWindow'){await api('api/settings',{method:'PUT',body:{dashboard_window_days:Number($('#settingWindow').value)}});await refresh({quiet:true});toast('Dashboard window saved.');}
@@ -640,5 +664,5 @@ function routedAssetId(){return new URLSearchParams(location.search).get('asset'
 function routedMeterId(){return new URLSearchParams(location.search).get('meter') || location.hash.match(/^#\/meter\/(.+)$/)?.[1] || null;}
 window.addEventListener('hashchange',()=>{const id=routedAssetId();if(id&&state.data){state.selectedAsset=id;state.assetView='tree';navigate('assets');}});
 
-$('#app').classList.toggle('sidebar-collapsed',localStorage.getItem('hmt-sidebar-collapsed')==='true');
+setSidebarCollapsed(storageGet('hmt-sidebar-collapsed')==='true');
 refresh().then(()=>{const meterId=routedMeterId(),assetId=routedAssetId();if(meterId){navigate('meters');openSingleReading(meterId);}else if(assetId){state.selectedAsset=assetId;state.assetView='tree';navigate('assets');}});

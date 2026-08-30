@@ -55,13 +55,13 @@ button { color: inherit; }
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 240px minmax(0, 1fr); transition: grid-template-columns .18s ease; }
 .app-shell.sidebar-collapsed { grid-template-columns: 74px minmax(0, 1fr); }
-.sidebar { position: sticky; top: 0; height: 100vh; background: var(--nav); color: var(--nav-text); padding: 24px 14px 16px; display: flex; flex-direction: column; z-index: 10; }
+.sidebar { position: sticky; top: 0; height: 100vh; min-width: 0; background: var(--nav); color: var(--nav-text); padding: 24px 14px 16px; display: flex; flex-direction: column; z-index: 10; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 0 6px 28px 10px; position: relative; }
 .brand-mark { width: 38px; height: 38px; display: grid; place-items: center; background: var(--primary); color: #fff; border-radius: 12px; font-size: 24px; }
 .brand strong, .brand small { display: block; }
 .brand strong { font-size: 14px; }
 .brand small { color: #91a5b0; margin-top: 2px; font-size: 11px; }
-.sidebar-toggle { margin-left: auto; width: 27px !important; min-width: 27px; height: 27px; padding: 0 !important; justify-content: center; border: 1px solid rgb(255 255 255 / 10%) !important; }
+.sidebar-toggle { margin-left: auto; width: 38px !important; min-width: 38px; height: 38px; padding: 0 !important; justify-content: center; border: 1px solid rgb(255 255 255 / 10%) !important; touch-action: manipulation; -webkit-tap-highlight-color: transparent; position: relative; z-index: 12; }
 .sidebar-toggle span { width: auto !important; }
 .sidebar nav { display: grid; gap: 5px; }
 .sidebar button { width: 100%; border: 0; background: transparent; color: #a9bbc4; display: flex; align-items: center; gap: 12px; border-radius: 10px; padding: 11px 12px; cursor: pointer; text-align: left; }

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+- Changed item and meter QR labels to launch Home Assistant Companion on Android and Apple devices and navigate to the exact record.
+- Added default-server routing without embedding a Home Assistant address or credentials in printed labels.
+- Fixed sidebar minimization on tablet touchscreens with explicit pointer handling, a larger touch target, and resilient preference storage.
+- Added regression coverage for Companion deep links and touch/click sidebar behavior.
+- Documented label regeneration and tablet troubleshooting.
+
 ## 0.2.0
 
 - Fixed Cancel and X controls being blocked by required-field validation in dialogs.
