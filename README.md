@@ -201,7 +201,7 @@ With sufficient timestamped history, the tracker estimates usage rate, remaining
 
 ### Meter QR Labels
 
-Select **QR** on a meter row to display and print its label. The QR code launches Home Assistant Companion on Android or Apple devices, selects the default registered Home Assistant server, and opens the meter's individual reading form. It does not contain credentials.
+Select **QR** on a meter row to display its label. The QR code launches Home Assistant Companion on Android or Apple devices, uses the Home Assistant connection configured on that device, and opens the meter's individual reading form. It contains neither a hostname nor credentials. Select **Download QR Code** to save an SVG that can be printed from the browser.
 
 After updating from version 0.2.0, regenerate previously printed item and meter labels. Older labels contain ordinary web addresses rather than Companion deep links.
 
@@ -318,13 +318,13 @@ Open every active maintenance task using that meter and reassign, change, or can
 ### QR Code Opens a Browser or the Wrong Screen
 
 - Confirm Home Assistant Companion is installed and connected to the desired Home Assistant server.
-- If more than one server is registered, set the desired installation as the default server in Companion.
-- Regenerate labels created by version 0.2.0; the new label must contain a Companion deep link.
+- Confirm Companion can open the intended Home Assistant installation using its configured local or Nabu Casa connection.
+- Regenerate labels created by version 0.2.0 or 0.2.1; the new label omits forced server selection.
 - Android and Apple may ask permission the first time a scanner opens the Companion app.
 
 ### Sidebar Does Not Minimize on a Tablet
 
-Confirm the installed application is version 0.2.1 or later, fully close and reopen Home Assistant Companion, and tap the arrow again. On phone-sized screens, the desktop sidebar is intentionally replaced by bottom navigation.
+Confirm the installed application is version 0.2.2 or later and reopen Home Assistant Companion. Version 0.2.2 prevents the old interface files from remaining cached. On phone-sized screens, the desktop sidebar is intentionally replaced by bottom navigation.
 
 ### Import Is Rejected
 
@@ -342,7 +342,7 @@ Home Assistant Ingress uses the existing Home Assistant authentication session. 
 
 ## Version
 
-Current release: **0.2.1**
+Current release: **0.2.2**
 
 See [`home_maintenance_tracker/CHANGELOG.md`](home_maintenance_tracker/CHANGELOG.md) for release details.
 

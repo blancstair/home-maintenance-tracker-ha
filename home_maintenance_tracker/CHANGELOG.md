@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2
+
+- Removed forced first-server selection from Companion QR links so each device can use its configured Home Assistant connection, including Nabu Casa or a local address.
+- Kept asset and meter QR generation in their existing locations and added SVG download controls for browser printing.
+- Replaced tablet-specific pointer handling with a single reliable sidebar click action.
+- Added versioned static-asset URLs and no-cache headers so Home Assistant Companion does not retain the prior interface after an update.
+- Added regression coverage for QR downloads, routing, cache headers, and tablet sidebar behavior.
+
 ## 0.2.1
 
 - Changed item and meter QR labels to launch Home Assistant Companion on Android and Apple devices and navigate to the exact record.

@@ -253,6 +253,7 @@ textarea { min-height: 92px; resize: vertical; }
 .toast.error { background: #8f2d2d; }
 @keyframes toast { from { transform: translateY(8px); opacity: 0; } }
 .mobile-nav { display: none; }
+.qr-actions { justify-content: center; margin-top: 12px; }
 
 @media (max-width: 980px) {
   .stats-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }

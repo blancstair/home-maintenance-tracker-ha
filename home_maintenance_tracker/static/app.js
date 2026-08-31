@@ -27,7 +27,11 @@ const storageSet = (key, value) => { try { localStorage.setItem(key, value); } c
 function companionNavigateUrl(panelPath, route, id) {
   if (!panelPath) throw new Error('Home Assistant Companion QR labels require the Home Assistant app panel.');
   const separator=panelPath.includes('?')?'&':'?';
-  return `homeassistant://navigate${panelPath}${separator}${route}=${encodeURIComponent(id)}&server=default`;
+  return `homeassistant://navigate${panelPath}${separator}${route}=${encodeURIComponent(id)}`;
+}
+
+function qrImageUrl(kind, id, target, download=false) {
+  return `api/${kind}/${id}/qr?url=${encodeURIComponent(target)}${download?'&download=1':''}`;
 }
 
 async function api(url, options = {}) {
@@ -507,7 +511,8 @@ async function openReadings() {
 async function openMeterQr(meterId) {
   const meter=await meterById(meterId),appInfo=await api('api/ha/app-info');if(!meter)return;
   let url;try{url=companionNavigateUrl(appInfo.panel_path,'meter',meterId);}catch(error){return toast(error.message,'error');}
-  openModal({title:`QR Label: ${meter.name}`,eyebrow:'PRINTABLE QUICK ENTRY',helpId:'meters-qr',body:`<div style="text-align:center"><img src="api/meters/${meter.id}/qr?url=${encodeURIComponent(url)}" alt="QR code for ${esc(meter.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(meter.asset_name)} — ${esc(meter.name)}</h3><p class="subtle">Scanning opens Home Assistant Companion on Android or Apple devices, then opens this meter’s individual reading form. The label contains no credentials.</p><button type="button" class="button" onclick="window.print()">Print Label</button></div>`,submit:'Close',onSubmit:closeModal});
+  const imageUrl=qrImageUrl('meters',meter.id,url),downloadUrl=qrImageUrl('meters',meter.id,url,true);
+  openModal({title:`QR Label: ${meter.name}`,eyebrow:'QUICK ENTRY LABEL',helpId:'meters-qr',body:`<div style="text-align:center"><img src="${imageUrl}" alt="QR code for ${esc(meter.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(meter.asset_name)} — ${esc(meter.name)}</h3><p class="subtle">Scanning opens Home Assistant Companion and lets it use the connection configured on that device before opening this meter’s individual reading form. The label contains no credentials.</p><div class="toolbar-group qr-actions"><a class="button" href="${downloadUrl}" download>Download QR Code</a><button type="button" class="button" onclick="window.print()">Print Label</button></div></div>`,submit:'Close',onSubmit:closeModal});
 }
 
 async function openManageMeter(meterId) {
@@ -550,7 +555,8 @@ function openPermanentDelete(assetId) {
 async function openQr(assetId) {
   const asset=state.data.assets.find(a=>a.id===assetId), appInfo=await api('api/ha/app-info');
   let url;try{url=companionNavigateUrl(appInfo.panel_path,'asset',assetId);}catch(error){return toast(error.message,'error');}
-  openModal({title:`QR Label: ${asset.name}`,eyebrow:'PRINTABLE LABEL',body:`<div style="text-align:center"><img src="api/assets/${assetId}/qr?url=${encodeURIComponent(url)}" alt="QR code for ${esc(asset.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(asset.name)}</h3><p class="subtle">Scanning opens Home Assistant Companion on Android or Apple devices, then opens this item. The label contains no credentials.</p><button type="button" class="button" onclick="window.print()">Print Label</button></div>`,submit:'Close',onSubmit:closeModal});
+  const imageUrl=qrImageUrl('assets',assetId,url),downloadUrl=qrImageUrl('assets',assetId,url,true);
+  openModal({title:`QR Label: ${asset.name}`,eyebrow:'ITEM LABEL',body:`<div style="text-align:center"><img src="${imageUrl}" alt="QR code for ${esc(asset.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(asset.name)}</h3><p class="subtle">Scanning opens Home Assistant Companion and lets it use the connection configured on that device before opening this item. The label contains no credentials.</p><div class="toolbar-group qr-actions"><a class="button" href="${downloadUrl}" download>Download QR Code</a><button type="button" class="button" onclick="window.print()">Print Label</button></div></div>`,submit:'Close',onSubmit:closeModal});
 }
 
 async function configureNotifications(fromSetup=false) {
@@ -641,15 +647,8 @@ function setSidebarCollapsed(collapsed) {
   toggle.setAttribute('aria-label',label);toggle.setAttribute('aria-expanded',String(!collapsed));toggle.title=label;
 }
 const sidebarToggle=$('#sidebarToggle');
-let sidebarPointerHandled=false;
-sidebarToggle.addEventListener('pointerup',event=>{
-  if(event.pointerType!=='touch'&&event.pointerType!=='pen')return;
-  event.preventDefault();sidebarPointerHandled=true;
-  setSidebarCollapsed(!$('#app').classList.contains('sidebar-collapsed'));
-  setTimeout(()=>{sidebarPointerHandled=false;},450);
-});
 sidebarToggle.addEventListener('click',event=>{
-  event.preventDefault();if(sidebarPointerHandled)return;
+  event.preventDefault();event.stopPropagation();
   setSidebarCollapsed(!$('#app').classList.contains('sidebar-collapsed'));
 });
 document.addEventListener('click',async e=>{

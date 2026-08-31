@@ -246,20 +246,43 @@ class TrackerTests(unittest.TestCase):
         self.assertIn("screen-dashboard", entries)
         self.assertIn("meters-manage", entries)
 
-    def test_14_companion_qr_and_touch_sidebar_regressions(self):
+    def test_14_companion_qr_and_tablet_sidebar_regressions(self):
         static_dir = Path(__file__).resolve().parents[1] / "static"
         html = (static_dir / "index.html").read_text()
         app_js = (static_dir / "app.js").read_text()
         help_js = (static_dir / "help.js").read_text()
         self.assertIn("homeassistant://navigate", app_js)
-        self.assertIn("&server=default", app_js)
+        self.assertNotIn("server=default", app_js)
         self.assertIn("companionNavigateUrl(appInfo.panel_path,'meter',meterId)", app_js)
         self.assertIn("companionNavigateUrl(appInfo.panel_path,'asset',assetId)", app_js)
         self.assertNotIn("`${location.origin}${appInfo.panel_path}`", app_js)
-        self.assertIn("addEventListener('pointerup'", app_js)
-        self.assertIn("event.pointerType!=='touch'", app_js)
+        self.assertNotIn("addEventListener('pointerup'", app_js)
+        self.assertIn("event.stopPropagation()", app_js)
+        self.assertIn("Download QR Code", app_js)
+        self.assertIn("static/app.js?v=0.2.2", html)
+        self.assertIn("static/styles.css?v=0.2.2", html)
         self.assertIn('aria-expanded="true"', html)
         self.assertIn("regenerate previously printed labels", help_js)
+
+    def test_15_qr_download_and_cache_headers(self):
+        asset = self.client.post("/api/assets", json={"name": "Download Test Asset"}).get_json()
+        meter = self.client.post("/api/meters", json={
+            "asset_id": asset["id"], "name": "Download Test Meter", "kind": "runtime", "unit": "hours",
+        }).get_json()
+        target = "homeassistant://navigate/hassio/ingress/test?meter=example"
+        asset_qr = self.client.get(f"/api/assets/{asset['id']}/qr", query_string={"url": target, "download": "1"})
+        meter_qr = self.client.get(f"/api/meters/{meter['id']}/qr", query_string={"url": target, "download": "1"})
+        self.assertEqual(asset_qr.status_code, 200)
+        self.assertEqual(meter_qr.status_code, 200)
+        self.assertIn("attachment", asset_qr.headers["Content-Disposition"])
+        self.assertIn("Download_Test_Asset-qr.svg", asset_qr.headers["Content-Disposition"])
+        self.assertIn("Download_Test_Meter-qr.svg", meter_qr.headers["Content-Disposition"])
+        index = self.client.get("/")
+        script = self.client.get("/static/app.js")
+        self.assertIn("no-store", index.headers["Cache-Control"])
+        self.assertIn("no-store", script.headers["Cache-Control"])
+        index.close()
+        script.close()
 
 
 if __name__ == "__main__":

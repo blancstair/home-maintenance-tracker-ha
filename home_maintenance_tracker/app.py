@@ -42,7 +42,7 @@ from database import (
 from scheduling import enrich_task, parse_date, reminder_days
 
 
-APP_VERSION = "0.2.1"
+APP_VERSION = "0.2.2"
 STATIC_DIR = Path(__file__).parent / "static"
 VALID_ATTACHMENT_CATEGORIES = {"manual", "receipt", "warranty", "diagram", "photograph", "video", "service_record", "other"}
 VALID_REMARK_CATEGORIES = {"preventive", "corrective", "observation", "lifecycle"}
@@ -58,6 +58,16 @@ METER_UNITS = {
 
 app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("HMT_MAX_UPLOAD_MB", "250")) * 1024 * 1024
+
+
+@app.after_request
+def prevent_stale_interface(response):
+    """Ingress WebViews can retain old application assets across app updates."""
+    if request.path == "/" or request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 
 def payload() -> dict:
@@ -407,11 +417,15 @@ def asset_qr(asset_id):
     if not target_url:
         abort(400, description="A target URL is required.")
     with connect() as db:
-        db_row(db, "SELECT id FROM assets WHERE id=?", (asset_id,))
+        asset = db_row(db, "SELECT id,name FROM assets WHERE id=?", (asset_id,))
     image = qrcode.make(target_url, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=3)
     output = io.BytesIO()
     image.save(output)
-    return Response(output.getvalue(), mimetype="image/svg+xml")
+    response = Response(output.getvalue(), mimetype="image/svg+xml")
+    if request.args.get("download") == "1":
+        filename = secure_filename(f"{asset['name']}-qr.svg") or f"asset-{asset_id}-qr.svg"
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 # Remarks and attachments -----------------------------------------------------
@@ -603,11 +617,15 @@ def meter_qr(meter_id):
     if not target_url:
         abort(400, description="A target URL is required.")
     with connect() as db:
-        db_row(db, "SELECT id FROM meters WHERE id=?", (meter_id,))
+        meter = db_row(db, "SELECT id,name FROM meters WHERE id=?", (meter_id,))
     image = qrcode.make(target_url, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=3)
     output = io.BytesIO()
     image.save(output)
-    return Response(output.getvalue(), mimetype="image/svg+xml")
+    response = Response(output.getvalue(), mimetype="image/svg+xml")
+    if request.args.get("download") == "1":
+        filename = secure_filename(f"{meter['name']}-qr.svg") or f"meter-{meter_id}-qr.svg"
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 @app.post("/api/meters/readings")
