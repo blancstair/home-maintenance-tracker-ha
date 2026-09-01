@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+- Replaced record-bearing Ingress deep links with native Home Assistant tag QR codes.
+- Added Android single-scan routing: a scan records the destination, opens the tracker through Companion, and resolves the exact item or meter inside the app.
+- Added one-device Android QR configuration and a permission/setup test under Settings.
+- Added short-lived, authenticated-user-aware pending routes that are consumed only by Android clients.
+- Corrected the stable Home Assistant panel route to use the installed app slug directly.
+- Preserved asset and meter QR generation, display, download, and print locations.
+- Documented the Android Display over other apps permission and required regeneration of all older labels.
+- Retained the current tablet sidebar behavior; clearing Companion app data remains the recovery for a mixed-version cached frontend.
+
 ## 0.2.2
 
 - Removed forced first-server selection from Companion QR links so each device can use its configured Home Assistant connection, including Nabu Casa or a local address.

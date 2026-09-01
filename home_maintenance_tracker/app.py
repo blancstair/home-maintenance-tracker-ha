@@ -42,8 +42,12 @@ from database import (
 from scheduling import enrich_task, parse_date, reminder_days
 
 
-APP_VERSION = "0.2.2"
+APP_VERSION = "0.3.0"
 STATIC_DIR = Path(__file__).parent / "static"
+TAG_URL_PREFIX = "https://www.home-assistant.io/tag/"
+QR_ROUTE_TTL_SECONDS = 90
+_pending_qr_routes: list[dict] = []
+_pending_qr_lock = threading.Lock()
 VALID_ATTACHMENT_CATEGORIES = {"manual", "receipt", "warranty", "diagram", "photograph", "video", "service_record", "other"}
 VALID_REMARK_CATEGORIES = {"preventive", "corrective", "observation", "lifecycle"}
 VALID_SCHEDULE_TYPES = {"one_time", "calendar", "meter", "combined", "seasonal", "pattern", "condition"}
@@ -95,6 +99,21 @@ def db_row(db, sql: str, values=(), *, required=True):
     if required and not row:
         abort(404, description="Record not found")
     return row
+
+
+def ensure_qr_tag(db, target_type: str, target_id: str) -> str:
+    row = db.execute(
+        "SELECT tag_id FROM qr_tags WHERE target_type=? AND target_id=?",
+        (target_type, target_id),
+    ).fetchone()
+    if row:
+        return row["tag_id"]
+    tag_id = f"hmt-{uuid.uuid4()}"
+    db.execute(
+        "INSERT INTO qr_tags(tag_id,target_type,target_id,created_at) VALUES (?,?,?,?)",
+        (tag_id, target_type, target_id, utcnow()),
+    )
+    return tag_id
 
 
 def json_attributes(data: dict) -> str:
@@ -413,11 +432,10 @@ def replace_asset(asset_id):
 
 @app.get("/api/assets/<asset_id>/qr")
 def asset_qr(asset_id):
-    target_url = request.args.get("url")
-    if not target_url:
-        abort(400, description="A target URL is required.")
-    with connect() as db:
+    with transaction() as db:
         asset = db_row(db, "SELECT id,name FROM assets WHERE id=?", (asset_id,))
+        tag_id = ensure_qr_tag(db, "asset", asset_id)
+    target_url = f"{TAG_URL_PREFIX}{tag_id}"
     image = qrcode.make(target_url, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=3)
     output = io.BytesIO()
     image.save(output)
@@ -613,11 +631,10 @@ def delete_meter(meter_id):
 
 @app.get("/api/meters/<meter_id>/qr")
 def meter_qr(meter_id):
-    target_url = request.args.get("url")
-    if not target_url:
-        abort(400, description="A target URL is required.")
-    with connect() as db:
+    with transaction() as db:
         meter = db_row(db, "SELECT id,name FROM meters WHERE id=?", (meter_id,))
+        tag_id = ensure_qr_tag(db, "meter", meter_id)
+    target_url = f"{TAG_URL_PREFIX}{tag_id}"
     image = qrcode.make(target_url, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=3)
     output = io.BytesIO()
     image.save(output)
@@ -927,7 +944,7 @@ def get_settings():
 
 @app.put("/api/settings")
 def update_settings():
-    allowed = {"dashboard_window_days", "theme", "notification_services", "notification_check_hour", "setup_complete"}
+    allowed = {"dashboard_window_days", "theme", "notification_services", "notification_check_hour", "qr_android_service", "setup_complete"}
     data = payload()
     with transaction() as db:
         for key, value in data.items():
@@ -948,21 +965,25 @@ def fetch_ha_services():
         return json.load(response)
 
 
-@app.get("/api/ha/app-info")
-def ha_app_info():
+def fetch_ha_app_identity() -> dict:
     token = os.environ.get("SUPERVISOR_TOKEN")
     if not token:
-        return jsonify({"connected": False, "slug": None, "panel_path": None})
+        return {"connected": False, "slug": None, "panel_path": None}
+    req = urllib.request.Request(
+        "http://supervisor/addons/self/info",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=10) as response:
+        result = json.load(response)
+    info = result.get("data", result)
+    slug = info.get("slug")
+    return {"connected": bool(slug), "slug": slug, "panel_path": f"/{slug}" if slug else None}
+
+
+@app.get("/api/ha/app-info")
+def ha_app_info():
     try:
-        req = urllib.request.Request(
-            "http://supervisor/addons/self/info",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            result = json.load(response)
-        info = result.get("data", result)
-        slug = info.get("slug")
-        return jsonify({"connected": True, "slug": slug, "panel_path": f"/hassio/ingress/{slug}" if slug else None})
+        return jsonify(fetch_ha_app_identity())
     except Exception as error:
         app.logger.warning("Could not read app identity from Supervisor: %s", error)
         return jsonify({"connected": False, "slug": None, "panel_path": None})
@@ -1008,6 +1029,112 @@ def test_notification():
     targets = payload().get("services") or []
     results = {target: send_ha_notification(target, "Home Maintenance Tracker", "Notifications are connected successfully.") for target in targets}
     return jsonify(results)
+
+
+@app.post("/api/ha/test-qr-open")
+def test_qr_open():
+    service = (payload().get("service") or "").strip()
+    if not service.startswith("mobile_app_"):
+        abort(400, description="Choose an Android Companion device.")
+    try:
+        panel_path = fetch_ha_app_identity()["panel_path"]
+    except Exception as error:
+        app.logger.warning("Could not read app identity for QR test: %s", error)
+        panel_path = None
+    if not panel_path:
+        abort(503, description="Home Assistant could not provide the tracker panel route.")
+    ok = send_ha_notification(service, "Home Maintenance Tracker", "command_webview", {"command": panel_path})
+    return jsonify({"ok": ok, "panel_path": panel_path}), (200 if ok else 502)
+
+
+def queue_pending_qr_route(tag_id: str, device_id: str | None = None, user_id: str | None = None) -> dict | None:
+    with connect() as db:
+        row = db.execute("SELECT target_type,target_id FROM qr_tags WHERE tag_id=?", (tag_id,)).fetchone()
+        if not row:
+            return None
+        table = "assets" if row["target_type"] == "asset" else "meters"
+        if not db.execute(f"SELECT 1 FROM {table} WHERE id=?", (row["target_id"],)).fetchone():
+            db.execute("DELETE FROM qr_tags WHERE tag_id=?", (tag_id,))
+            db.commit()
+            return None
+        service = get_setting(db, "qr_android_service")
+    now = time.time()
+    route = {
+        "target_type": row["target_type"], "target_id": row["target_id"],
+        "device_id": device_id, "user_id": user_id, "created_at": now,
+        "expires_at": now + QR_ROUTE_TTL_SECONDS,
+    }
+    with _pending_qr_lock:
+        _pending_qr_routes[:] = [item for item in _pending_qr_routes if item["expires_at"] > now][-19:]
+        _pending_qr_routes.append(route)
+    if service:
+        try:
+            panel_path = fetch_ha_app_identity()["panel_path"]
+            if panel_path:
+                send_ha_notification(service, "Home Maintenance Tracker", "command_webview", {"command": panel_path})
+        except Exception as error:
+            app.logger.warning("Could not auto-open tracker after QR scan: %s", error)
+    return route
+
+
+@app.get("/api/qr/pending")
+def consume_pending_qr_route():
+    if "android" not in request.headers.get("User-Agent", "").lower():
+        return jsonify({"pending": False})
+    user_id = request.headers.get("X-Remote-User-Id")
+    now = time.time()
+    with _pending_qr_lock:
+        _pending_qr_routes[:] = [item for item in _pending_qr_routes if item["expires_at"] > now]
+        candidates = [
+            (index, item) for index, item in enumerate(_pending_qr_routes)
+            if not item.get("user_id") or not user_id or item["user_id"] == user_id
+        ]
+        if not candidates:
+            return jsonify({"pending": False})
+        index, route = candidates[-1]
+        _pending_qr_routes.pop(index)
+    return jsonify({"pending": True, "target_type": route["target_type"], "target_id": route["target_id"]})
+
+
+def handle_tag_scanned_message(message: dict) -> dict | None:
+    event = message.get("event") or {}
+    data = event.get("data") or {}
+    tag_id = data.get("tag_id")
+    if not tag_id:
+        return None
+    context = event.get("context") or {}
+    return queue_pending_qr_route(tag_id, data.get("device_id"), context.get("user_id"))
+
+
+def qr_tag_worker() -> None:
+    token = os.environ.get("SUPERVISOR_TOKEN")
+    if not token:
+        return
+    while True:
+        connection = None
+        try:
+            import websocket
+            connection = websocket.create_connection("ws://supervisor/core/websocket", timeout=30)
+            connection.recv()
+            connection.send(json.dumps({"type": "auth", "access_token": token}))
+            auth = json.loads(connection.recv())
+            if auth.get("type") != "auth_ok":
+                raise RuntimeError("Home Assistant rejected the app websocket token.")
+            connection.send(json.dumps({"id": 1, "type": "subscribe_events", "event_type": "tag_scanned"}))
+            connection.settimeout(None)
+            while True:
+                message = json.loads(connection.recv())
+                if message.get("type") == "event":
+                    handle_tag_scanned_message(message)
+        except Exception as error:
+            app.logger.warning("QR tag listener disconnected: %s", error)
+            time.sleep(10)
+        finally:
+            if connection:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
 
 
 def run_notification_check() -> None:
@@ -1172,6 +1299,9 @@ initialize_database()
 
 if os.environ.get("HMT_DISABLE_NOTIFICATION_THREAD") != "1":
     threading.Thread(target=notification_worker, name="hmt-notifications", daemon=True).start()
+
+if os.environ.get("HMT_DISABLE_QR_THREAD") != "1" and os.environ.get("SUPERVISOR_TOKEN"):
+    threading.Thread(target=qr_tag_worker, name="hmt-qr-tags", daemon=True).start()
 
 
 if __name__ == "__main__":

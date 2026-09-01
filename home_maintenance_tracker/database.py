@@ -193,6 +193,15 @@ CREATE TABLE IF NOT EXISTS notification_log (
     severity TEXT NOT NULL,
     targets_json TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS qr_tags (
+    tag_id TEXT PRIMARY KEY,
+    target_type TEXT NOT NULL CHECK(target_type IN ('asset','meter')),
+    target_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(target_type, target_id)
+);
+CREATE INDEX IF NOT EXISTS idx_qr_tags_target ON qr_tags(target_type, target_id);
 """
 
 
@@ -202,6 +211,7 @@ DEFAULT_SETTINGS = {
     "theme": "system",
     "notification_services": [],
     "notification_check_hour": 9,
+    "qr_android_service": None,
     "setup_complete": False,
 }
 

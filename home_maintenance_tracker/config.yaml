@@ -1,5 +1,5 @@
 name: Home Maintenance Tracker
-version: "0.2.2"
+version: "0.3.0"
 slug: home_maintenance_tracker
 description: Material history, attachments, meters, and scheduled home maintenance
 url: https://github.com/blancstair/home-maintenance-tracker-ha

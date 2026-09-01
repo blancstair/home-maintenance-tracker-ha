@@ -10,6 +10,7 @@ The application uses a responsive dashboard, a searchable asset hierarchy, SQLit
 - An `amd64` Intel/AMD system or an `aarch64` 64-bit ARM system
 - Internet access while installing or updating the application
 - A supported browser or the Home Assistant Companion app
+- For automatic single-scan QR opening: Home Assistant Companion on Android and permission to display over other apps
 
 The tracker runs on the Home Assistant system. A separate server, NAS, Microsoft Access installation, or continuously running desktop computer is not required.
 
@@ -46,10 +47,11 @@ Recommended first steps:
 2. Open **Maintenance** and review the agenda, calendar, and dense-table views.
 3. Open **Meter Readings** and test individual and bulk reading entry.
 4. Go to **Settings → Notifications** and select any registered Home Assistant Companion devices that should receive reminders.
-5. Create a real item and attach a test document.
-6. Download a manual export from **Settings**.
-7. Confirm Home Assistant backups include Home Maintenance Tracker.
-8. Remove the fictional sample data from **Settings** when it is no longer needed.
+5. On the Android device that will scan labels, complete **Settings → Android QR Auto-Open** as described below.
+6. Create a real item and attach a test document.
+7. Download a manual export from **Settings**.
+8. Confirm Home Assistant backups include Home Maintenance Tracker.
+9. Remove the fictional sample data from **Settings** when it is no longer needed.
 
 Removing the sample data does not remove records created by the user. The sample dataset can be reinstalled later.
 
@@ -201,9 +203,29 @@ With sufficient timestamped history, the tracker estimates usage rate, remaining
 
 ### Meter QR Labels
 
-Select **QR** on a meter row to display its label. The QR code launches Home Assistant Companion on Android or Apple devices, uses the Home Assistant connection configured on that device, and opens the meter's individual reading form. It contains neither a hostname nor credentials. Select **Download QR Code** to save an SVG that can be printed from the browser.
+Select **QR** on a meter row to display its label. On the configured Android device, one scan launches Home Assistant Companion and opens that meter's individual reading form. Select **Download QR Code** to save an SVG that can be printed from the browser.
 
-After updating from version 0.2.0, regenerate previously printed item and meter labels. Older labels contain ordinary web addresses rather than Companion deep links.
+Version 0.3.0 labels use a native Home Assistant tag URL with a random opaque identifier. They do not contain a Home Assistant hostname, local IP address, Nabu Casa address, asset or meter ID, or credentials. Regenerate every item and meter label created before version 0.3.0.
+
+### Configure Android Single-Scan Opening
+
+The Android workflow deliberately avoids sending an asset or meter through an Ingress path, query string, or fragment. Home Assistant normalizes app-panel navigation to the tracker root, which caused earlier labels to open the Dashboard or return a 404. Version 0.3.0 transfers the record destination internally instead.
+
+1. Install, connect, and open Home Assistant Companion on the Android phone or tablet that will scan labels.
+2. In Home Maintenance Tracker, open **Settings → Android QR Auto-Open**.
+3. Select that Android device, then choose **Save and Test**.
+4. The first test opens Android's special-access settings. Allow Home Assistant to **Display over other apps**.
+5. Return to Home Assistant and confirm the test opens the tracker.
+6. Generate a new item or meter QR code and scan it with that Android device.
+
+During a scan:
+
+1. Android recognizes the standard `https://www.home-assistant.io/tag/...` address and sends a `tag_scanned` event to Home Assistant.
+2. The tracker matches the opaque tag to one item or meter and stores that destination for up to 90 seconds.
+3. The tracker sends Android Companion a `command_webview` request to open the tracker's stable Home Assistant panel.
+4. The Android WebView consumes the pending destination and opens the exact item or individual meter-reading form.
+
+Only one Android Companion device is configured as the automatic target. Select the Android device that you intend to use for scanning. If **Display over other apps** is denied, the tag event still reaches Home Assistant but Android cannot complete automatic one-scan opening. Apple devices do not support this automatic workflow in version 0.3.0.
 
 ### Manage a Meter
 
@@ -315,16 +337,19 @@ Download a manual export before uninstalling the application. Removing the appli
 
 Open every active maintenance task using that meter and reassign, change, or cancel the task. The meter can then be archived without losing its readings.
 
-### QR Code Opens a Browser or the Wrong Screen
+### QR Code Does Not Open the Record
 
-- Confirm Home Assistant Companion is installed and connected to the desired Home Assistant server.
-- Confirm Companion can open the intended Home Assistant installation using its configured local or Nabu Casa connection.
-- Regenerate labels created by version 0.2.0 or 0.2.1; the new label omits forced server selection.
-- Android and Apple may ask permission the first time a scanner opens the Companion app.
+- Confirm the tracker shows version 0.3.0 or later.
+- Confirm the Android device appears under **Settings → Android QR Auto-Open** and is selected.
+- Run **Save and Test** again and grant Home Assistant **Display over other apps** permission.
+- Confirm the test opens the tracker before testing a label.
+- Regenerate the label; every pre-0.3.0 QR code contains the obsolete routing format.
+- In Home Assistant's Tags panel, confirm the scan appears. If it does but the tracker does not open, review the Home Maintenance Tracker app log for a disconnected QR tag listener.
+- Confirm Android is routing `www.home-assistant.io/tag` links to Home Assistant Companion rather than a web browser.
 
 ### Sidebar Does Not Minimize on a Tablet
 
-Confirm the installed application is version 0.2.2 or later and reopen Home Assistant Companion. Version 0.2.2 prevents the old interface files from remaining cached. On phone-sized screens, the desktop sidebar is intentionally replaced by bottom navigation.
+Confirm the installed application is version 0.2.2 or later and reopen Home Assistant Companion. If Chrome shows the new interface but Companion does not, Android may have retained a mixed-version Ingress frontend. Clearing ordinary cache may be insufficient; clear Home Assistant Companion's app data, sign in again, and reopen the tracker. On phone-sized screens, the desktop sidebar is intentionally replaced by bottom navigation.
 
 ### Import Is Rejected
 
@@ -342,7 +367,7 @@ Home Assistant Ingress uses the existing Home Assistant authentication session. 
 
 ## Version
 
-Current release: **0.2.2**
+Current release: **0.3.0**
 
 See [`home_maintenance_tracker/CHANGELOG.md`](home_maintenance_tracker/CHANGELOG.md) for release details.
 

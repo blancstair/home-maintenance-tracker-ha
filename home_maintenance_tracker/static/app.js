@@ -12,6 +12,7 @@ const state = {
   notifyServices: [],
   meters: [],
   showArchivedMeters: false,
+  checkingQrRoute: false,
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -24,14 +25,8 @@ const fmtSize = bytes => bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(byt
 const storageGet = key => { try { return localStorage.getItem(key); } catch (_) { return null; } };
 const storageSet = (key, value) => { try { localStorage.setItem(key, value); } catch (_) {} };
 
-function companionNavigateUrl(panelPath, route, id) {
-  if (!panelPath) throw new Error('Home Assistant Companion QR labels require the Home Assistant app panel.');
-  const separator=panelPath.includes('?')?'&':'?';
-  return `homeassistant://navigate${panelPath}${separator}${route}=${encodeURIComponent(id)}`;
-}
-
-function qrImageUrl(kind, id, target, download=false) {
-  return `api/${kind}/${id}/qr?url=${encodeURIComponent(target)}${download?'&download=1':''}`;
+function qrImageUrl(kind, id, download=false) {
+  return `api/${kind}/${id}/qr${download?'?download=1':''}`;
 }
 
 async function api(url, options = {}) {
@@ -64,6 +59,7 @@ async function refresh({quiet = false} = {}) {
     $('#loading').classList.add('hidden');
     $('#errorState').classList.add('hidden');
     renderAll();
+    handlePendingQrRoute();
     if (!state.data.settings.setup_complete && !quiet) startSetup();
   } catch (error) {
     $('#loading').classList.add('hidden');
@@ -91,6 +87,25 @@ function navigate(page) {
   if (page === 'meters') renderMeters();
   if (page === 'reports') renderReports();
   window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+async function handlePendingQrRoute() {
+  if(state.checkingQrRoute || !/Android/i.test(navigator.userAgent))return;
+  state.checkingQrRoute=true;
+  try {
+    const route=await api('api/qr/pending');
+    if(!route.pending)return;
+    if(route.target_type==='asset'){
+      state.selectedAsset=route.target_id;
+      navigate('assets');
+      renderAssets();
+      toast('Opened the scanned item.');
+    } else if(route.target_type==='meter'){
+      navigate('meters');
+      await openSingleReading(route.target_id);
+    }
+  } catch(error){ console.warn('Could not consume QR route:',error); }
+  finally { state.checkingQrRoute=false; }
 }
 
 function stateLabel(task) {
@@ -319,7 +334,7 @@ function renderHelp() {
       <section class="help-section" id="help-alerts"><p class="eyebrow">ESCALATION</p><h2>Due, overdue, and red alerts</h2><p>A task is due at its normal interval. It becomes red at 1.5 times the interval measured from the last completion or completion meter reading. Snoozing hides ordinary reminders only; it never conceals the red state.</p><ul><li>Intervals through one week repeat daily.</li><li>More than one week through three months repeat weekly.</li><li>More than three through nine months repeat every 14 days.</li><li>Longer intervals repeat monthly.</li></ul><p>Meter tasks use projected calendar interval when sufficient usage history exists and weekly reminders otherwise.</p></section>
       <section class="help-section" id="help-reports"><p class="eyebrow">OUTPUT</p><h2>Reports and PDF export</h2><p>Open Reports, choose a report, and select <strong>Print / Save PDF</strong>. The print layout removes navigation and controls. Available reports cover upcoming and overdue maintenance, complete service history, hierarchy, archives/replacements, warranties, cost, materials used, and meter readings.</p></section>
       <section class="help-section" id="help-backup"><p class="eyebrow">RECOVERY</p><h2>Home Assistant backups and manual transfer</h2><p>Home Assistant backups protect the app alongside the rest of your system. The manual export produces a portable ZIP containing the SQLite database, attachments, and a manifest. Use it to migrate just this tracker or retrieve its records without restoring all of Home Assistant.</p><ol class="steps"><li>Open Settings and select <strong>Download full export</strong>.</li><li>Keep the ZIP somewhere outside the Home Assistant machine.</li><li>To restore, select the ZIP under Manual import.</li><li>Confirm the warning and wait for the reload message.</li></ol><div class="callout warning"><strong>Import replaces current tracker data.</strong> Export the current data first if you may need to return to it.</div></section>
-      <section class="help-section" id="help-mobile"><p class="eyebrow">ACCESS</p><h2>Mobile access and QR labels</h2><p>Open the tracker from the Home Assistant sidebar in a browser or the Companion app. Nabu Casa uses the same Home Assistant sign-in. A QR label contains the exact item route from the Home Assistant address used when the label was generated. Scan it with a signed-in phone to open that item directly.</p></section>
+      <section class="help-section" id="help-mobile"><p class="eyebrow">ACCESS</p><h2>Mobile Access and Android QR Labels</h2><p>Open the tracker from the Home Assistant sidebar in a browser or Companion. Nabu Casa uses the same Home Assistant sign-in.</p><p>Version 0.3.0 labels are native Home Assistant tags. Configure the Android scanning device under <strong>Settings → Android QR Auto-Open</strong>, run the test, and grant <strong>Display over other apps</strong>. One scan then opens the exact item or meter internally without relying on an Ingress query or device-specific address. Regenerate every older label.</p></section>
     </article>
   </div>`;
 }
@@ -352,6 +367,7 @@ function renderSettings() {
   $('#page-settings').innerHTML=`<div class="settings-grid">
     <section class="setting-card"><div class="section-title"><h2>Dashboard Window</h2>${helpButton('settings-window')}</div><p>Choose how far ahead the overview looks.</p><label>Days<input id="settingWindow" type="number" min="1" max="365" value="${s.dashboard_window_days}"></label><button class="button" style="margin-top:12px" id="saveWindow">Save</button></section>
     <section class="setting-card"><div class="section-title"><h2>Notifications</h2>${helpButton('settings-notifications')}</div><p>Choose Home Assistant Companion devices and the daily check hour.</p><button class="button" id="configureNotifications">Configure Devices</button></section>
+    <section class="setting-card"><div class="section-title"><h2>Android QR Auto-Open</h2>${helpButton('settings-qr-android')}</div><p>${s.qr_android_service?`Single-scan opening is assigned to <strong>${esc(s.qr_android_service.replace('mobile_app_','').replaceAll('_',' '))}</strong>.`:'Choose the Android device that should open scanned item and meter labels.'}</p><button class="button" id="configureQrAndroid">Configure Android Device</button></section>
     <section class="setting-card"><div class="section-title"><h2>Manual Export</h2>${helpButton('settings-export')}</div><p>Download the database and every managed attachment as one portable ZIP.</p><a class="button" href="api/export" style="display:inline-block;text-decoration:none">Download Full Export</a></section>
     <section class="setting-card"><div class="section-title"><h2>Manual Import</h2>${helpButton('settings-import')}</div><p>Replace current tracker data with a previously exported ZIP.</p><input id="importFile" type="file" accept=".zip"><button class="button danger" style="margin-top:12px" id="importData">Import and Replace</button></section>
     <section class="setting-card full"><div class="section-title"><h2>Fictional Sample Data</h2>${helpButton('settings-sample')}</div><p>${s.sample_data_installed ? 'The sample property, equipment, tasks, meters, and history are installed. Removing them does not affect records you created.' : 'The sample dataset has been removed. You may reinstall it for training at any time.'}</p><button class="button ${s.sample_data_installed?'danger':''}" id="toggleSample">${s.sample_data_installed?'Remove Sample Data':'Reinstall Sample Data'}</button></section>
@@ -509,10 +525,9 @@ async function openReadings() {
 }
 
 async function openMeterQr(meterId) {
-  const meter=await meterById(meterId),appInfo=await api('api/ha/app-info');if(!meter)return;
-  let url;try{url=companionNavigateUrl(appInfo.panel_path,'meter',meterId);}catch(error){return toast(error.message,'error');}
-  const imageUrl=qrImageUrl('meters',meter.id,url),downloadUrl=qrImageUrl('meters',meter.id,url,true);
-  openModal({title:`QR Label: ${meter.name}`,eyebrow:'QUICK ENTRY LABEL',helpId:'meters-qr',body:`<div style="text-align:center"><img src="${imageUrl}" alt="QR code for ${esc(meter.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(meter.asset_name)} — ${esc(meter.name)}</h3><p class="subtle">Scanning opens Home Assistant Companion and lets it use the connection configured on that device before opening this meter’s individual reading form. The label contains no credentials.</p><div class="toolbar-group qr-actions"><a class="button" href="${downloadUrl}" download>Download QR Code</a><button type="button" class="button" onclick="window.print()">Print Label</button></div></div>`,submit:'Close',onSubmit:closeModal});
+  const meter=await meterById(meterId);if(!meter)return;
+  const imageUrl=qrImageUrl('meters',meter.id),downloadUrl=qrImageUrl('meters',meter.id,true);
+  openModal({title:`QR Label: ${meter.name}`,eyebrow:'QUICK ENTRY LABEL',helpId:'meters-qr',body:`<div style="text-align:center"><img src="${imageUrl}" alt="QR code for ${esc(meter.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(meter.asset_name)} — ${esc(meter.name)}</h3><p class="subtle">On the configured Android device, one scan opens Home Assistant Companion and this meter’s individual reading form. The label contains an opaque Home Assistant tag identifier, not a hostname, record ID, or credentials.</p><div class="toolbar-group qr-actions"><a class="button" href="${downloadUrl}" download>Download QR Code</a><button type="button" class="button" onclick="window.print()">Print Label</button></div></div>`,submit:'Close',onSubmit:closeModal});
 }
 
 async function openManageMeter(meterId) {
@@ -553,10 +568,15 @@ function openPermanentDelete(assetId) {
 }
 
 async function openQr(assetId) {
-  const asset=state.data.assets.find(a=>a.id===assetId), appInfo=await api('api/ha/app-info');
-  let url;try{url=companionNavigateUrl(appInfo.panel_path,'asset',assetId);}catch(error){return toast(error.message,'error');}
-  const imageUrl=qrImageUrl('assets',assetId,url),downloadUrl=qrImageUrl('assets',assetId,url,true);
-  openModal({title:`QR Label: ${asset.name}`,eyebrow:'ITEM LABEL',body:`<div style="text-align:center"><img src="${imageUrl}" alt="QR code for ${esc(asset.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(asset.name)}</h3><p class="subtle">Scanning opens Home Assistant Companion and lets it use the connection configured on that device before opening this item. The label contains no credentials.</p><div class="toolbar-group qr-actions"><a class="button" href="${downloadUrl}" download>Download QR Code</a><button type="button" class="button" onclick="window.print()">Print Label</button></div></div>`,submit:'Close',onSubmit:closeModal});
+  const asset=state.data.assets.find(a=>a.id===assetId);
+  const imageUrl=qrImageUrl('assets',assetId),downloadUrl=qrImageUrl('assets',assetId,true);
+  openModal({title:`QR Label: ${asset.name}`,eyebrow:'ITEM LABEL',body:`<div style="text-align:center"><img src="${imageUrl}" alt="QR code for ${esc(asset.name)}" style="width:min(280px,100%);background:white;padding:10px;border-radius:12px"><h3>${esc(asset.name)}</h3><p class="subtle">On the configured Android device, one scan opens Home Assistant Companion and this item. The label contains an opaque Home Assistant tag identifier, not a hostname, record ID, or credentials.</p><div class="toolbar-group qr-actions"><a class="button" href="${downloadUrl}" download>Download QR Code</a><button type="button" class="button" onclick="window.print()">Print Label</button></div></div>`,submit:'Close',onSubmit:closeModal});
+}
+
+async function configureQrAndroid() {
+  const result=await api('api/ha/notify-services');
+  const selected=state.data.settings.qr_android_service||'';
+  openModal({title:'Android QR Auto-Open',eyebrow:'HOME ASSISTANT',helpId:'settings-qr-android',body:`<p>Select the Android Companion device that should automatically open the tracker after a QR scan. Only one device can be the auto-open target.</p><div class="device-list">${result.services.length?`<label class="device-option"><input type="radio" name="qr_service" value="" ${selected?'':'checked'}> <span><strong>Disabled</strong><small class="subtle">QR scans still fire Home Assistant tag events.</small></span></label>${result.services.map(s=>`<label class="device-option"><input type="radio" name="qr_service" value="${s.service}" ${selected===s.service?'checked':''}> <span><strong>${esc(s.label)}</strong><small class="subtle">notify.${esc(s.service)}</small></span></label>`).join('')}`:'<p class="subtle">No Companion devices were found. Open Companion on the Android device, then return here.</p>'}</div><div class="callout">The first test asks Android to grant Home Assistant <strong>Display over other apps</strong> permission. Grant it for automatic single-scan opening.</div>`,submit:'Save and Test',onSubmit:async()=>{const service=$('input[name="qr_service"]:checked')?.value||null;await api('api/settings',{method:'PUT',body:{qr_android_service:service}});if(service)await api('api/ha/test-qr-open',{method:'POST',body:{service}});closeModal();await refresh({quiet:true});toast(service?'Android QR device saved. Complete the permission prompt if shown.':'Android QR auto-open disabled.');}});
 }
 
 async function configureNotifications(fromSetup=false) {
@@ -655,6 +675,7 @@ document.addEventListener('click',async e=>{
   if(e.target.id==='runReport')runReport($('#reportSelect').value);
   if(e.target.id==='saveWindow'){await api('api/settings',{method:'PUT',body:{dashboard_window_days:Number($('#settingWindow').value)}});await refresh({quiet:true});toast('Dashboard window saved.');}
   if(e.target.id==='configureNotifications')configureNotifications();
+  if(e.target.id==='configureQrAndroid')configureQrAndroid();
   if(e.target.id==='toggleSample'){const installed=state.data.settings.sample_data_installed;if(confirm(installed?'Remove only the fictional sample records?':'Reinstall the fictional sample records?')){await api(`api/sample-data/${installed?'remove':'restore'}`,{method:'POST'});state.selectedAsset=null;await refresh({quiet:true});navigate('settings');toast(installed?'Sample data removed.':'Sample data installed.');}}
   if(e.target.id==='importData'){const file=$('#importFile').files[0];if(!file)return toast('Choose an export ZIP first.','error');if(!confirm('Import will replace all current tracker records and attachments. Continue?'))return;const body=new FormData();body.append('file',file);await api('api/import',{method:'POST',body});toast('Import complete. Reloading…');setTimeout(()=>location.reload(),900);}
 });
@@ -662,6 +683,7 @@ document.addEventListener('click',async e=>{
 function routedAssetId(){return new URLSearchParams(location.search).get('asset') || location.hash.match(/^#\/asset\/(.+)$/)?.[1] || null;}
 function routedMeterId(){return new URLSearchParams(location.search).get('meter') || location.hash.match(/^#\/meter\/(.+)$/)?.[1] || null;}
 window.addEventListener('hashchange',()=>{const id=routedAssetId();if(id&&state.data){state.selectedAsset=id;state.assetView='tree';navigate('assets');}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&state.data)handlePendingQrRoute();});
 
 setSidebarCollapsed(storageGet('hmt-sidebar-collapsed')==='true');
 refresh().then(()=>{const meterId=routedMeterId(),assetId=routedAssetId();if(meterId){navigate('meters');openSingleReading(meterId);}else if(assetId){state.selectedAsset=assetId;state.assetView='tree';navigate('assets');}});

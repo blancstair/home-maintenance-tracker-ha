@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import zipfile
 import re
+from unittest import mock
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from pathlib import Path
 TEST_DIR = tempfile.mkdtemp(prefix="hmt-tests-")
 os.environ["HMT_DATA_DIR"] = TEST_DIR
 os.environ["HMT_DISABLE_NOTIFICATION_THREAD"] = "1"
+os.environ["HMT_DISABLE_QR_THREAD"] = "1"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app as application  # noqa: E402
@@ -246,32 +248,30 @@ class TrackerTests(unittest.TestCase):
         self.assertIn("screen-dashboard", entries)
         self.assertIn("meters-manage", entries)
 
-    def test_14_companion_qr_and_tablet_sidebar_regressions(self):
+    def test_14_native_tag_qr_and_tablet_sidebar_regressions(self):
         static_dir = Path(__file__).resolve().parents[1] / "static"
         html = (static_dir / "index.html").read_text()
         app_js = (static_dir / "app.js").read_text()
         help_js = (static_dir / "help.js").read_text()
-        self.assertIn("homeassistant://navigate", app_js)
-        self.assertNotIn("server=default", app_js)
-        self.assertIn("companionNavigateUrl(appInfo.panel_path,'meter',meterId)", app_js)
-        self.assertIn("companionNavigateUrl(appInfo.panel_path,'asset',assetId)", app_js)
-        self.assertNotIn("`${location.origin}${appInfo.panel_path}`", app_js)
+        self.assertNotIn("homeassistant://navigate", app_js)
+        self.assertNotIn("companionNavigateUrl", app_js)
+        self.assertIn("api/qr/pending", app_js)
+        self.assertIn("configureQrAndroid", app_js)
         self.assertNotIn("addEventListener('pointerup'", app_js)
         self.assertIn("event.stopPropagation()", app_js)
         self.assertIn("Download QR Code", app_js)
-        self.assertIn("static/app.js?v=0.2.2", html)
-        self.assertIn("static/styles.css?v=0.2.2", html)
+        self.assertIn("static/app.js?v=0.3.0", html)
+        self.assertIn("static/styles.css?v=0.3.0", html)
         self.assertIn('aria-expanded="true"', html)
-        self.assertIn("regenerate previously printed labels", help_js)
+        self.assertIn("Regenerate every label created before version 0.3.0", help_js)
 
     def test_15_qr_download_and_cache_headers(self):
         asset = self.client.post("/api/assets", json={"name": "Download Test Asset"}).get_json()
         meter = self.client.post("/api/meters", json={
             "asset_id": asset["id"], "name": "Download Test Meter", "kind": "runtime", "unit": "hours",
         }).get_json()
-        target = "homeassistant://navigate/hassio/ingress/test?meter=example"
-        asset_qr = self.client.get(f"/api/assets/{asset['id']}/qr", query_string={"url": target, "download": "1"})
-        meter_qr = self.client.get(f"/api/meters/{meter['id']}/qr", query_string={"url": target, "download": "1"})
+        asset_qr = self.client.get(f"/api/assets/{asset['id']}/qr", query_string={"download": "1"})
+        meter_qr = self.client.get(f"/api/meters/{meter['id']}/qr", query_string={"download": "1"})
         self.assertEqual(asset_qr.status_code, 200)
         self.assertEqual(meter_qr.status_code, 200)
         self.assertIn("attachment", asset_qr.headers["Content-Disposition"])
@@ -283,6 +283,37 @@ class TrackerTests(unittest.TestCase):
         self.assertIn("no-store", script.headers["Cache-Control"])
         index.close()
         script.close()
+
+    def test_16_native_tag_is_stable_and_android_consumes_pending_route(self):
+        asset = self.client.post("/api/assets", json={"name": "Native Tag Asset"}).get_json()
+        with mock.patch.object(application.qrcode, "make", wraps=application.qrcode.make) as make_qr:
+            self.assertEqual(self.client.get(f"/api/assets/{asset['id']}/qr").status_code, 200)
+            encoded_target = make_qr.call_args.args[0]
+        self.assertTrue(encoded_target.startswith("https://www.home-assistant.io/tag/hmt-"))
+        self.assertEqual(self.client.get(f"/api/assets/{asset['id']}/qr").status_code, 200)
+        with application.connect() as db:
+            tags = db.execute(
+                "SELECT tag_id FROM qr_tags WHERE target_type='asset' AND target_id=?", (asset["id"],)
+            ).fetchall()
+        self.assertEqual(len(tags), 1)
+        self.assertTrue(tags[0]["tag_id"].startswith("hmt-"))
+        application._pending_qr_routes.clear()
+        route = application.queue_pending_qr_route(tags[0]["tag_id"], "android-device", "user-1")
+        self.assertEqual(route["target_id"], asset["id"])
+        desktop = self.client.get("/api/qr/pending", headers={"User-Agent": "Chrome Windows", "X-Remote-User-Id": "user-1"})
+        self.assertFalse(desktop.get_json()["pending"])
+        wrong_user = self.client.get("/api/qr/pending", headers={"User-Agent": "Home Assistant Android", "X-Remote-User-Id": "user-2"})
+        self.assertFalse(wrong_user.get_json()["pending"])
+        android = self.client.get("/api/qr/pending", headers={"User-Agent": "Home Assistant Android", "X-Remote-User-Id": "user-1"})
+        self.assertEqual(android.get_json(), {"pending": True, "target_type": "asset", "target_id": asset["id"]})
+        self.assertFalse(self.client.get("/api/qr/pending", headers={"User-Agent": "Home Assistant Android", "X-Remote-User-Id": "user-1"}).get_json()["pending"])
+
+    def test_17_qr_worker_uses_native_event_and_stable_panel_root(self):
+        source = Path(application.__file__).read_text()
+        self.assertIn('"event_type": "tag_scanned"', source)
+        self.assertIn('"command_webview"', source)
+        self.assertIn('"panel_path": f"/{slug}"', source)
+        self.assertNotIn('f"/hassio/ingress/{slug}"', source)
 
 
 if __name__ == "__main__":
